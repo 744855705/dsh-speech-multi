@@ -32,6 +32,7 @@ const GIB = 1024 ** 3
  * | 6 s   | —     | —       | 2.0 GB     | 2.9 GB      |
  * | 60 s  | 1.0 GB | 2.6 GB | 3.0 GB     | 3.5 GB      |
  * | 120 s | —     | —       | 4.3 GB     | 3.6 GB      |
+ * | 212 s | 1.0 GB | 2.6 GB | 5.4 GB     | 3.8 GB      |
  *
  * Qwen3 therefore belongs to the mid tier and FireRed to the top tier, which is the opposite of
  * what their download sizes suggest. Without punctuation models the tiers would reorder again.
@@ -49,7 +50,9 @@ const POLICIES: Readonly<Record<DeviceTier, TierPolicy>> = {
   },
   large: {
     tier: 'large',
-    maxRecordingSeconds: 120,
+    // The top tier keeps the full ceiling: a small model on a big machine is the cheapest way
+    // to transcribe a long recording, and only this tier may attempt one.
+    maxRecordingSeconds: 300,
     models: ['multi-xasr', 'multi-funasr', 'multi-qwen3', 'multi-firered'],
   },
 }

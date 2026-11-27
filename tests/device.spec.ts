@@ -19,10 +19,10 @@ describe('classifyDevice', () => {
 })
 
 describe('tierPolicy', () => {
-  it('keeps the light tier to one minute and everything else to two', () => {
+  it('keeps the long-recording ceiling for the largest tier', () => {
     expect(tierPolicy('light').maxRecordingSeconds).toBe(60)
     expect(tierPolicy('standard').maxRecordingSeconds).toBe(120)
-    expect(tierPolicy('large').maxRecordingSeconds).toBe(120)
+    expect(tierPolicy('large').maxRecordingSeconds).toBe(300)
   })
 
   it('adds Qwen3 before FireRed, because it peaks lower at this ceiling', () => {

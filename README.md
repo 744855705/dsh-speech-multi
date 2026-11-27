@@ -125,11 +125,13 @@ behaviour with no disk write, so removing the plugin restores whatever was selec
 |---|---|---|---|
 | `light` | under 8 GiB | X-ASR, Fun-ASR-Nano | 60 s |
 | `standard` | under 16 GiB | + Qwen3-ASR 0.6B | 120 s |
-| `large` | 16 GiB and above | + FireRedASR2-AED | 120 s |
+| `large` | 16 GiB and above | + FireRedASR2-AED | 300 s |
 
 The split follows measured peak memory at each ceiling rather than model size: at 60 s Qwen3
 peaks near 3.0 GB and FireRed near 3.5 GB, and at 120 s they are 4.3 GB and 3.6 GB. Qwen3 is
-cheaper where the mid tier lives, so it opens there and FireRed opens on the top tier.
+cheaper where the mid tier lives, so it opens there and FireRed opens on the top tier. The top
+tier keeps a five-minute ceiling because a small model on a large machine is the cheapest way to
+transcribe a long recording.
 
 A model the tier cannot run is skipped with a warning; recordings past the ceiling are rejected
 before decoding instead of exhausting memory.
