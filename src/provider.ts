@@ -42,12 +42,16 @@ const replySchema = z.object({
 
 /**
  * Where the shared assets sit once installed.
+ *
+ * Both are directories: the worker picks the detector inside `vad/` and reads the punctuation
+ * model from the other. This must mirror what {@link ensureShared} returns, or a cached install
+ * points the worker at a path that does not exist and silently degrades to energy detection.
  * @param dataRoot - model root.
- * @returns the Silero and punctuation paths the preparation step also produces.
+ * @returns the VAD and punctuation directories.
  */
 function sharedPaths(dataRoot: string): SharedPaths {
   return {
-    vad: join(dataRoot, 'vad', 'silero_vad.onnx'),
+    vad: join(dataRoot, 'vad'),
     punctuation: join(dataRoot, 'punctuation', 'fireredpunc'),
   }
 }
@@ -282,6 +286,29 @@ export class ModelProvider implements SpeechPreparation {
     return await job
   }
 
+  /**
+   * Make sure the shared archives are on disk, degrading instead of failing the recording.
+   * @param signal - preparation deadline.
+   * @returns the shared paths; an entry stays undefined when its archive is unavailable.
+   */
+  private async refreshShared(signal: AbortSignal): Promise<SharedPaths> {
+    try {
+      return await ensureShared({
+        dataRoot: this.config.dataRoot,
+        baseUrl: this.config.releaseBaseUrl,
+        manifest: this.shared.manifest,
+        signal,
+        progressIntervalMs: this.config.progressIntervalMs,
+        onProgress: () => {},
+      })
+    } catch (error) {
+      // A missing or unreachable shared archive must not stop transcription: the worker falls
+      // back to energy detection and the one model without punctuation returns plain text.
+      this.ctx.logger.warn(`speech-multi could not prepare shared assets: ${String(error)}`)
+      return { vad: undefined, punctuation: undefined }
+    }
+  }
+
   private async start(signal: AbortSignal): Promise<Worker> {
     if (this.worker?.closed === true) await this.stop()
     if (this.worker !== undefined) return this.worker
@@ -301,6 +328,12 @@ export class ModelProvider implements SpeechPreparation {
       })
       root = installed.root
       this.assets = installed.assets
+    } else {
+      // A cached model skips `install`, but the shared archives ship separately and can be new
+      // in this release. Checking here is what makes an updated plugin pick up a detector it did
+      // not have when the model was first downloaded; with the markers present it costs two
+      // `access` calls and no network.
+      this.assets = await this.refreshShared(setup)
     }
     this.root = root
     setup.throwIfAborted()

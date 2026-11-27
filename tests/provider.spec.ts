@@ -82,3 +82,23 @@ describe('activation probe', () => {
     for (const provider of providers) await provider.dispose()
   })
 })
+
+describe('shared assets', () => {
+  it('resolves the VAD as a directory, not the retired Silero file', async () => {
+    const { isSharedInstalled } = await import('../src/runtime/prepare.ts')
+    const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const root = await mkdtemp(join(tmpdir(), 'speech-multi-shared-'))
+    expect(await isSharedInstalled(root)).toBe(false)
+    await mkdir(join(root, 'vad'), { recursive: true })
+    await mkdir(join(root, 'punctuation', 'fireredpunc'), { recursive: true })
+    await writeFile(join(root, 'vad', 'fsmn.onnx'), '')
+    await writeFile(join(root, 'punctuation', 'fireredpunc', 'punc.fp16.onnx'), '')
+    expect(await isSharedInstalled(root)).toBe(true)
+    // The marker must be the file the detector opens, and the path handed to the worker must be
+    // the directory that contains it.
+    const { readdir } = await import('node:fs/promises')
+    expect(await readdir(join(root, 'vad'))).toContain('fsmn.onnx')
+  })
+})

@@ -64,6 +64,12 @@ export declare class ModelProvider implements SpeechPreparation {
      */
     transcribe(input: SpeechInput, signal: AbortSignal): Promise<Transcript>;
     private enqueue;
+    /**
+     * Make sure the shared archives are on disk, degrading instead of failing the recording.
+     * @param signal - preparation deadline.
+     * @returns the shared paths; an entry stays undefined when its archive is unavailable.
+     */
+    private refreshShared;
     private start;
     /** Read the single readiness line, bounded and deadline-guarded. */
     private readPort;
