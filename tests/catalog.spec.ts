@@ -31,6 +31,12 @@ describe('catalog', () => {
     expect(external.map((model) => model.id)).toEqual(['multi-firered'])
   })
 
+  it('accepts the automatic language hint the speech service defaults to', () => {
+    for (const model of MODELS) {
+      expect(model.languages, `${model.id} must accept "auto"`).toContain('auto')
+    }
+  })
+
   it('publishes an archive with a digest for every model', () => {
     const manifest = loadManifest()
     for (const model of MODELS) {
