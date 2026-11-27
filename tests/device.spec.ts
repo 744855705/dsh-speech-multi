@@ -19,21 +19,24 @@ describe('classifyDevice', () => {
 })
 
 describe('tierPolicy', () => {
-  it('shortens the recording ceiling as memory shrinks', () => {
+  it('keeps the light tier to one minute and everything else to two', () => {
     expect(tierPolicy('light').maxRecordingSeconds).toBe(60)
     expect(tierPolicy('standard').maxRecordingSeconds).toBe(120)
-    expect(tierPolicy('large').maxRecordingSeconds).toBe(300)
+    expect(tierPolicy('large').maxRecordingSeconds).toBe(120)
   })
 
-  it('offers every model only on the largest tier', () => {
-    expect(tierPolicy('large').models).toHaveLength(4)
+  it('adds Qwen3 before FireRed, because it peaks lower at this ceiling', () => {
     expect(tierPolicy('light').models).toEqual(['multi-xasr', 'multi-funasr'])
+    expect(tierPolicy('standard').models).toEqual(['multi-xasr', 'multi-funasr', 'multi-qwen3'])
+    expect(tierPolicy('large').models).toHaveLength(4)
+    expect(tierPolicy('large').models).toContain('multi-firered')
   })
 })
 
 describe('availableModels', () => {
   it('keeps requested order and drops what the tier cannot run', () => {
-    expect(availableModels(['multi-qwen3', 'multi-xasr'], 'standard')).toEqual(['multi-xasr'])
+    expect(availableModels(['multi-firered', 'multi-xasr'], 'standard')).toEqual(['multi-xasr'])
+    expect(availableModels(['multi-qwen3', 'multi-xasr'], 'standard')).toEqual(['multi-qwen3', 'multi-xasr'])
   })
 
   it('falls back to the tier leader when nothing requested fits', () => {
