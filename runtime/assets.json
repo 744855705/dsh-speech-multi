@@ -20,6 +20,10 @@
     "punctuation.tar.zst": {
       "sha256": "a227a8665902ed34d5811ac9170ff300bdba48794e36a6e080890f59b4ad83ea",
       "bytes": 248882260
+    },
+    "vad.tar.zst": {
+      "sha256": "48ddf76b5a12391d55cac1206ed8ab4e575173fe14c67c01dd5b3017ecb28f88",
+      "bytes": 3805039
     }
   }
 }

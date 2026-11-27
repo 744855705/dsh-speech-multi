@@ -71,7 +71,9 @@ export const MODELS: readonly ModelDescriptor[] = [
     displayName: 'Fun-ASR-Nano (int8, 1024 context)',
     languages: ['auto', 'zh', 'en', 'ja'],
     priority: 2,
-    chunking: { blockSeconds: 20, minBlockSeconds: 6, hardCapSeconds: 30 },
+    // Past 34 s this decoder starts repeating a phrase until the window ends, so the
+    // target and the cap both stay well below the point where that begins.
+    chunking: { blockSeconds: 10, minBlockSeconds: 6, hardCapSeconds: 20 },
     punctuation: 'builtin',
     expectedMemoryBytes: 2_700_000_000,
     recommendedDiskBytes: 1_000_000_000,
@@ -84,7 +86,7 @@ export const MODELS: readonly ModelDescriptor[] = [
     displayName: 'Qwen3-ASR 0.6B (int8)',
     languages: ['auto', 'zh', 'en'],
     priority: 3,
-    chunking: { blockSeconds: 40, minBlockSeconds: 8, hardCapSeconds: 100 },
+    chunking: { blockSeconds: 14, minBlockSeconds: 8, hardCapSeconds: 60 },
     punctuation: 'builtin',
     expectedMemoryBytes: 6_400_000_000,
     recommendedDiskBytes: 960_000_000,
@@ -97,7 +99,7 @@ export const MODELS: readonly ModelDescriptor[] = [
     displayName: 'FireRedASR2-AED (int8)',
     languages: ['auto', 'zh', 'en'],
     priority: 4,
-    chunking: { blockSeconds: 40, minBlockSeconds: 8, hardCapSeconds: 55 },
+    chunking: { blockSeconds: 26, minBlockSeconds: 8, hardCapSeconds: 55 },
     punctuation: 'external',
     expectedMemoryBytes: 3_300_000_000,
     recommendedDiskBytes: 1_300_000_000,

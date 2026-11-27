@@ -1,8 +1,10 @@
 import type { FamilyId, ModelDescriptor } from '../catalog.ts';
 import { type AssetManifest } from './assets.ts';
 import { type DownloadProgress } from './download.ts';
-/** Archive holding assets shared by every model: the Silero VAD and the punctuation model. */
-export declare const SHARED_ARCHIVE = "punctuation.tar.zst";
+/** Archive holding the punctuation model, used by the one model that does not punctuate itself. */
+export declare const PUNCTUATION_ARCHIVE = "punctuation.tar.zst";
+/** Archive holding both voice-activity detectors, shared by every model. */
+export declare const VAD_ARCHIVE = "vad.tar.zst";
 /** Where one model's files live. */
 export declare function modelRoot(dataRoot: string, model: ModelDescriptor): string;
 /** Where archives are cached before expansion. */
@@ -47,9 +49,11 @@ export interface PrepareInput {
  */
 export declare function ensureModel(input: PrepareInput): Promise<string>;
 /**
- * Make the shared archive available: Silero VAD for every model, punctuation for the one model
- * that does not punctuate itself.
+ * Make the shared archives available.
+ *
+ * Punctuation is needed by exactly one model, the VAD by all of them, and they ship separately so
+ * replacing a detector does not force a re-download of the 248 MB punctuation archive.
  * @param input - locations, manifest and cancellation.
- * @returns the resolved shared paths; `vad` stays undefined when the archive is not published.
+ * @returns the resolved shared paths; an entry stays undefined when its archive is not published.
  */
 export declare function ensureShared(input: Omit<PrepareInput, 'model'>): Promise<SharedPaths>;

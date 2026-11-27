@@ -1,16 +1,15 @@
 /**
  * Speech-region detection inside the worker.
  *
- * Silero is preferred because it separates speech from music and steady noise, which an energy
- * threshold cannot. The energy detector stays as the fallback for an installation that has not
- * fetched the shared archive yet, so a missing VAD file degrades the block boundaries instead of
- * failing the recording.
+ * FSMN-VAD is the default because it produced the lowest character error rate of every detector
+ * measured on a 212 s recording (4.23-4.61 %, against 6.10-7.60 % for the Silero detector this
+ * replaced). FireRedVAD is the fallback at 4.73-5.85 %, tried when the primary model is missing
+ * or throws. The energy detector stays last so a recording still gets block boundaries instead of
+ * failing outright.
  */
-import { createRequire } from 'node:module'
 import type { Span } from '../chunking.ts'
 import { detectSpeech } from '../vad.ts'
-
-const require = createRequire(import.meta.url)
+import { fireRed, fsmn } from '../vad/detect.ts'
 
 /** Detection settings carried from the plugin configuration. */
 export interface DetectionOptions {
@@ -21,64 +20,25 @@ export interface DetectionOptions {
   readonly threads: number
 }
 
-/** Shape of the sherpa VAD this module drives. */
-interface SherpaVad {
-  acceptWaveform(samples: Float32Array): void
-  isEmpty(): boolean
-  pop(): void
-  front(enableExternalBuffer: boolean): { start: number; samples: Float32Array }
-  flush(): void
-}
-
-type VadFactory = (config: Record<string, unknown>, bufferSizeSeconds: number) => SherpaVad
-
 /**
- * Detect speech regions, preferring Silero.
+ * Detect speech regions, preferring FSMN and degrading to FireRedVAD then to energy.
  * @param samples - mono samples.
  * @param sampleRate - samples per second.
- * @param vadModel - Silero model path, or undefined to use the energy fallback.
- * @param options - thresholds shared by both detectors.
+ * @param vadDirectory - directory holding both VAD models, or undefined to use the energy fallback.
+ * @param options - thresholds shared by every detector.
  * @returns ascending speech regions.
  */
-export function detectRegions(samples: Float32Array, sampleRate: number, vadModel: string | undefined,
-  options: DetectionOptions): readonly Span[] {
-  if (vadModel === undefined) return detectSpeech(samples, sampleRate, { minSpeechSeconds: options.minSpeechSeconds })
-  let create: VadFactory
-  try {
-    const sherpa = require('sherpa-onnx-node') as { Vad: new (config: Record<string, unknown>, bufferSeconds: number) => SherpaVad }
-    create = (config, bufferSeconds) => new sherpa.Vad(config, bufferSeconds)
-  } catch {
-    return detectSpeech(samples, sampleRate, { minSpeechSeconds: options.minSpeechSeconds })
-  }
-  const vad = create({
-    sileroVad: {
-      model: vadModel,
-      threshold: options.threshold,
-      minSilenceDuration: options.minSilenceSeconds,
-      minSpeechDuration: options.minSpeechSeconds,
-      maxSpeechDuration: options.maxSpeechSeconds,
-      windowSize: 512,
-    },
-    sampleRate,
-    numThreads: options.threads,
-    provider: 'cpu',
-    debug: 0,
-    // Silero occasionally closes a region later than its own limit, so the ring buffer is
-    // sized well past it; an overflow warns but copies, which is noise we do not want.
-  }, Math.max(10, options.maxSpeechSeconds * 2))
-  const regions: Span[] = []
-  const collect = (): void => {
-    while (!vad.isEmpty()) {
-      const segment = vad.front(false)
-      regions.push({ start: segment.start, end: segment.start + segment.samples.length })
-      vad.pop()
+export async function detectRegions(samples: Float32Array, sampleRate: number, vadDirectory: string | undefined,
+  options: DetectionOptions): Promise<readonly Span[]> {
+  const energy = (): readonly Span[] => detectSpeech(samples, sampleRate, { minSpeechSeconds: options.minSpeechSeconds })
+  if (vadDirectory === undefined || sampleRate !== 16_000) return energy()
+  for (const detector of [fsmn, fireRed]) {
+    try {
+      const regions = await detector.detect(vadDirectory, samples, options)
+      if (regions.length > 0) return regions
+    } catch {
+      // The next detector is tried; the energy fallback comes last.
     }
   }
-  for (let offset = 0; offset < samples.length; offset += 512) {
-    vad.acceptWaveform(samples.subarray(offset, offset + 512))
-    collect()
-  }
-  vad.flush()
-  collect()
-  return regions
+  return energy()
 }

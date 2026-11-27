@@ -42,6 +42,10 @@ export interface Config {
     /** Add punctuation for models that do not emit it themselves. */
     punctuation: boolean;
     /** Silero speech probability threshold. */
+    /** Extra hotwords appended to the built-in list. */
+    hotwords: string[];
+    /** Turns the hotword list off without losing it. */
+    hotwordsEnabled: boolean;
     vadThreshold: number;
     /** Silence that separates two speech regions. */
     minSilenceSeconds: number;

@@ -66,6 +66,10 @@ export interface Config {
   /** Add punctuation for models that do not emit it themselves. */
   punctuation: boolean
   /** Silero speech probability threshold. */
+  /** Extra hotwords appended to the built-in list. */
+  hotwords: string[]
+  /** Turns the hotword list off without losing it. */
+  hotwordsEnabled: boolean
   vadThreshold: number
   /** Silence that separates two speech regions. */
   minSilenceSeconds: number
@@ -106,6 +110,10 @@ export const Config: z<Partial<Config>, Config> = z.object({
   deviceTier: z.union([z.const('auto'), z.const('light'), z.const('standard'), z.const('large')]).default('auto'),
   threads: z.natural().min(1).default(8),
   punctuation: z.boolean().default(true),
+  /** Extra hotwords appended to the built-in developer vocabulary. */
+  hotwords: z.array(z.string().min(1)).default([]),
+  /** Turns the whole hotword list off, keeping the configuration intact. */
+  hotwordsEnabled: z.boolean().default(true),
   vadThreshold: z.number().min(0).max(1).default(0.5),
   minSilenceSeconds: z.number().min(0.01).default(0.8),
   minSpeechSeconds: z.number().min(0).default(0.1),

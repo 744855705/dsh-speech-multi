@@ -19,6 +19,8 @@ export interface FamilyOptions {
   readonly threads: number
   /** Recording length; the Qwen3 family sizes its token budget from it. */
   readonly audioSeconds: number
+  /** Merged hotwords; families that cannot use them ignore this. */
+  readonly hotwords: readonly string[]
 }
 
 /** Construction options handed to `sherpa.OfflineRecognizer`. */

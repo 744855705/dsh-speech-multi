@@ -11,6 +11,7 @@ import { createRequire } from 'node:module'
 import { z } from 'zod'
 import type { ChunkingPolicy, FamilyId } from '../catalog.ts'
 import { strategyFor } from '../models/index.ts'
+import { phrasesFor } from '../hotwords.ts'
 import { punctuateOrKeep } from '../punctuation/fireredpunc.ts'
 import { decodeWave } from '../runtime/wav.ts'
 import { decodeRecording } from './decode.ts'
@@ -33,7 +34,10 @@ const payloadSchema = z.object({
   maxAudioBytes: z.number().int().positive(),
   chunking: policySchema,
   /** Silero model path; the energy fallback runs when it is absent. */
-  vadModel: z.string().min(1).optional(),
+  /** Merged hotwords; families that cannot bias ignore them. */
+  hotwords: z.array(z.string().min(1)).optional(),
+  /** Directory holding fsmn.onnx, vad.mvn, firered.onnx and cmvn.json. */
+  vadDirectory: z.string().min(1).optional(),
   /**
    * FireRedPunc directory. The Host only sends it for a decoder that never punctuates on its own:
    * a model with its own punctuation is trusted to handle it, because a second pass over text it
@@ -61,14 +65,15 @@ async function main(): Promise<void> {
   delete process.env.DSH_SPEECH_TOKEN
 
   const chunking: ChunkingPolicy = payload.chunking
+  const hotwords = payload.hotwords ?? []
   const spec = strategyFor(payload.family as FamilyId).engine(
     { root: payload.root },
-    { threads: payload.threads, audioSeconds: chunking.hardCapSeconds },
+    { threads: payload.threads, audioSeconds: chunking.hardCapSeconds, hotwords },
   )
 
   const sherpa = require('sherpa-onnx-node') as {
     OfflineRecognizer: new (options: RecognizerOptions & Record<string, unknown>) => {
-      createStream(): { acceptWaveform(input: { sampleRate: number; samples: Float32Array }): void }
+      createStream(hotwords?: string): { acceptWaveform(input: { sampleRate: number; samples: Float32Array }): void }
       decode(stream: unknown): void
       getResult(stream: unknown): { text: string }
     }
@@ -89,7 +94,7 @@ async function main(): Promise<void> {
 
   const { port } = await startServer(token, payload.maxAudioBytes, async (audio) => {
     const wave = decodeWave(audio)
-    const segments = detectRegions(wave.samples, wave.sampleRate, payload.vadModel, detection)
+    const segments = await detectRegions(wave.samples, wave.sampleRate, payload.vadDirectory, detection)
     const result = await decodeRecording({
       recognizer,
       modelId: payload.modelId,
@@ -97,6 +102,8 @@ async function main(): Promise<void> {
       samples: wave.samples,
       sampleRate: wave.sampleRate,
       segments,
+      // Only the biasing family passes phrases to the stream; the rest would reject them.
+      ...payload.family === 'xasr' && hotwords.length > 0 ? { hotwords: phrasesFor(hotwords) } : {},
       ...punctuationDirectory === undefined ? {} : {
         punctuate: async (text: string) => await punctuateOrKeep(punctuationDirectory, text),
       },

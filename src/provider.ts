@@ -26,6 +26,7 @@ import type { ModelDescriptor } from './catalog.ts'
 import type { Config } from './config.ts'
 import { withDeadline } from './deadline.ts'
 import { checkTranscript, sanitize, trimShortTrailingMarks } from './health.ts'
+import { mergeHotwords } from './hotwords.ts'
 import type { AssetManifest } from './runtime/assets.ts'
 import type { DownloadProgress } from './runtime/download.ts'
 import { ensureModel, ensureShared, isInstalled, isSharedInstalled, modelRoot, type SharedPaths } from './runtime/prepare.ts'
@@ -319,7 +320,8 @@ export class ModelProvider implements SpeechPreparation {
           threads: this.config.threads,
           maxAudioBytes: this.config.maxAudioBytes,
           chunking: this.model.chunking,
-          ...this.assets.vad === undefined ? {} : { vadModel: this.assets.vad },
+          ...this.assets.vad === undefined ? {} : { vadDirectory: this.assets.vad },
+          ...this.config.hotwordsEnabled ? { hotwords: mergeHotwords(this.config.hotwords) } : {},
           // Only a decoder that never punctuates gets a second pass. A model that emits its own
           // marks is left alone: re-punctuating it either doubles marks or, on text it chose not
           // to punctuate, invents them.

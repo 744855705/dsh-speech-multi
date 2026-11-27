@@ -12,7 +12,7 @@ import type { ChunkingPolicy } from '../catalog.ts';
 import { type Span } from '../chunking.ts';
 /** The slice of the sherpa recognizer this module uses. */
 export interface StreamRecognizer {
-    createStream(): {
+    createStream(hotwords?: string): {
         acceptWaveform(input: {
             sampleRate: number;
             samples: Float32Array;
@@ -30,6 +30,8 @@ export interface DecodeRequest {
     readonly policy: ChunkingPolicy;
     readonly samples: Float32Array;
     readonly sampleRate: number;
+    /** Biasing phrases, only for a family that implements contextual biasing. */
+    readonly hotwords?: string;
     /** Speech regions from whichever detector the worker chose. */
     readonly segments: readonly Span[];
     /**

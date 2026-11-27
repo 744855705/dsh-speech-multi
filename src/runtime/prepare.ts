@@ -6,11 +6,17 @@ import { archiveUrl, assetFor, type AssetManifest } from './assets.ts'
 import { downloadArchive, type DownloadProgress } from './download.ts'
 import { extractTarZst } from './tar.ts'
 
-/** Archive holding assets shared by every model: the Silero VAD and the punctuation model. */
-export const SHARED_ARCHIVE = 'punctuation.tar.zst'
+/** Archive holding the punctuation model, used by the one model that does not punctuate itself. */
+export const PUNCTUATION_ARCHIVE = 'punctuation.tar.zst'
 
-/** File whose presence proves the shared archive finished expanding. */
-const SHARED_MARKER = join('vad', 'silero_vad.onnx')
+/** Archive holding both voice-activity detectors, shared by every model. */
+export const VAD_ARCHIVE = 'vad.tar.zst'
+
+/** File whose presence proves the punctuation archive finished expanding. */
+const PUNCTUATION_MARKER = join('punctuation', 'fireredpunc', 'punc.fp16.onnx')
+
+/** File whose presence proves the VAD archive finished expanding. */
+const VAD_MARKER = join('vad', 'fsmn.onnx')
 
 /** File whose presence proves an expansion finished, keyed by family. */
 const MARKERS: Readonly<Record<FamilyId, string>> = {
@@ -60,7 +66,8 @@ export interface SharedPaths {
  */
 export async function isSharedInstalled(dataRoot: string): Promise<boolean> {
   try {
-    await access(join(dataRoot, SHARED_MARKER))
+    await access(join(dataRoot, PUNCTUATION_MARKER))
+    await access(join(dataRoot, VAD_MARKER))
     return true
   } catch {
     return false
@@ -115,27 +122,36 @@ export async function ensureModel(input: PrepareInput): Promise<string> {
 
 
 /**
- * Make the shared archive available: Silero VAD for every model, punctuation for the one model
- * that does not punctuate itself.
+ * Make the shared archives available.
+ *
+ * Punctuation is needed by exactly one model, the VAD by all of them, and they ship separately so
+ * replacing a detector does not force a re-download of the 248 MB punctuation archive.
  * @param input - locations, manifest and cancellation.
- * @returns the resolved shared paths; `vad` stays undefined when the archive is not published.
+ * @returns the resolved shared paths; an entry stays undefined when its archive is not published.
  */
 export async function ensureShared(input: Omit<PrepareInput, 'model'>): Promise<SharedPaths> {
-  const vad = join(input.dataRoot, SHARED_MARKER)
   const punctuation = join(input.dataRoot, 'punctuation', 'fireredpunc')
-  if (await isSharedInstalled(input.dataRoot)) return { vad, punctuation }
-  const record = input.manifest.files[SHARED_ARCHIVE]
-  if (record === undefined) return { vad: undefined, punctuation: undefined }
-  const cached = join(input.dataRoot, '.cache', SHARED_ARCHIVE)
+  const vad = join(input.dataRoot, 'vad')
   await mkdir(join(input.dataRoot, '.cache'), { recursive: true })
-  if (!(await isSharedInstalled(input.dataRoot))) {
-    await downloadArchive(archiveUrl(input.baseUrl, SHARED_ARCHIVE), cached, record, {
+  const fetch = async (archive: string, marker: string): Promise<boolean> => {
+    try {
+      await access(join(input.dataRoot, marker))
+      return true
+    } catch {
+      // Not installed yet, or a previous expansion failed half way.
+    }
+    const record = input.manifest.files[archive]
+    if (record === undefined) return false
+    const cached = join(input.dataRoot, '.cache', archive)
+    await downloadArchive(archiveUrl(input.baseUrl, archive), cached, record, {
       signal: input.signal,
       progressIntervalMs: input.progressIntervalMs,
       ...input.onProgress === undefined ? {} : { onProgress: input.onProgress },
     })
     await extractTarZst(cached, input.dataRoot)
+    return true
   }
-  const installed = await isSharedInstalled(input.dataRoot)
-  return { vad: installed ? vad : undefined, punctuation: installed ? punctuation : undefined }
+  const punctuationReady = await fetch(PUNCTUATION_ARCHIVE, PUNCTUATION_MARKER)
+  const vadReady = await fetch(VAD_ARCHIVE, VAD_MARKER)
+  return { vad: vadReady ? vad : undefined, punctuation: punctuationReady ? punctuation : undefined }
 }

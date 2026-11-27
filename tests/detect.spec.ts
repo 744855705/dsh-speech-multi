@@ -19,15 +19,15 @@ function sample(): Float32Array {
 }
 
 describe('detectRegions', () => {
-  it('falls back to the energy detector when no Silero model is installed', () => {
-    const regions = detectRegions(sample(), RATE, undefined, OPTIONS)
+  it('falls back to the energy detector when no VAD model is installed', async () => {
+    const regions = await detectRegions(sample(), RATE, undefined, OPTIONS)
     expect(regions.length).toBe(2)
     expect(regions[0]?.start).toBeLessThan(2 * RATE + 1000)
     expect(regions[1]?.start).toBeGreaterThan(3.5 * RATE)
   })
 
-  it('never returns overlapping regions', () => {
-    const regions = detectRegions(sample(), RATE, undefined, OPTIONS)
+  it('never returns overlapping regions', async () => {
+    const regions = await detectRegions(sample(), RATE, undefined, OPTIONS)
     for (let index = 1; index < regions.length; index += 1) {
       expect((regions[index]?.start ?? 0)).toBeGreaterThanOrEqual(regions[index - 1]?.end ?? 0)
     }

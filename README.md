@@ -143,13 +143,29 @@ characters than the recording warrants, or a repeated passage is rejected and re
 returned. There is no automatic retry: a result that fails inspection is a recording to redo, not
 a model to switch.
 
+## Voice activity detection
+
+Speech regions come from two neural detectors in a chain, both driven by the same Kaldi-style
+80-bin log-mel frontend in `src/vad/`:
+
+1. **FSMN-VAD** is tried first. It is a DFSMN over LFR-stacked frames and threads four recurrent
+   caches through the utterance.
+2. **FireRedVAD** is tried when the first model is missing or throws. It is stateless, so it needs
+   only its own normalisation on top of the shared frontend.
+3. **Energy detection** is the last resort, used when neither model is installed.
+
+Both networks were trained on 16 kHz mono audio whose samples carry int16 scale rather than the
+`[-1, 1]` range the WAV decoder returns; the frontend applies that scale, because without it the
+models keep returning plausible-looking scores that mean nothing.
+
+The two detectors disagree about what their score means, which is why each declares its own
+polarity: FSMN reports a silence score, FireRedVAD a speech score.
+
 ## Known gaps in this build
 
-- External punctuation is not wired yet, so `multi-firered` returns unpunctuated text. The other
-  three emit punctuation themselves.
-- Speech/silence detection is energy-based; a Silero model is not shipped, so a very noisy room
-  can shift the block boundaries.
-- Nothing has been exercised end to end: no model is installed into a profile from this build yet.
+- Both neural detectors are trained on 16 kHz mono audio. A recording at another rate falls back
+  to the energy detector rather than being resampled.
+- The VAD thresholds are fixed in configuration and are not tuned per microphone.
 
 ## License
 

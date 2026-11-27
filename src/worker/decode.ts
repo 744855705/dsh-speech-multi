@@ -13,7 +13,7 @@ import { assertWithinHardCap, planBlocks, quietestCut, type Span } from '../chun
 
 /** The slice of the sherpa recognizer this module uses. */
 export interface StreamRecognizer {
-  createStream(): {
+  createStream(hotwords?: string): {
     acceptWaveform(input: { sampleRate: number; samples: Float32Array }): void
   }
   decode(stream: unknown): void
@@ -27,6 +27,8 @@ export interface DecodeRequest {
   readonly policy: ChunkingPolicy
   readonly samples: Float32Array
   readonly sampleRate: number
+  /** Biasing phrases, only for a family that implements contextual biasing. */
+  readonly hotwords?: string
   /** Speech regions from whichever detector the worker chose. */
   readonly segments: readonly Span[]
   /**
@@ -74,7 +76,9 @@ export async function decodeRecording(request: DecodeRequest): Promise<DecodeRes
   const blocks = planRecording(request)
   const parts: string[] = []
   for (const block of blocks) {
-    const stream = request.recognizer.createStream()
+    const stream = request.hotwords === undefined
+      ? request.recognizer.createStream()
+      : request.recognizer.createStream(request.hotwords)
     stream.acceptWaveform({
       sampleRate: request.sampleRate,
       samples: request.samples.subarray(block.start, block.end),

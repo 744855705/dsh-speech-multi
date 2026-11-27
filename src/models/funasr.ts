@@ -7,6 +7,7 @@
  * so the tokenizer vocabulary stands in as a file that exists.
  */
 import { join } from 'node:path'
+import { promptFor } from '../hotwords.ts'
 import type { FamilyStrategy } from './family.ts'
 
 export const funasr: FamilyStrategy = {
@@ -21,6 +22,9 @@ export const funasr: FamilyStrategy = {
           llm: join(root, 'llm.int8.onnx'),
           embedding: join(root, 'embedding.int8.onnx'),
           tokenizer,
+          // Hotwords reach this family as prompt text, so they spend the export's fixed
+          // 1024-token budget rather than adding a separate biasing graph.
+          ...options.hotwords.length === 0 ? {} : { hotwords: promptFor(options.hotwords) },
         },
         numThreads: options.threads,
         provider: 'cpu',
