@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkTranscript, sanitize } from '../src/health.ts'
+import { checkTranscript, contentLength, sanitize, trimShortTrailingMarks } from '../src/health.ts'
 
 describe('sanitize', () => {
   it('strips a silence marker without gluing the words together', () => {
@@ -62,5 +62,27 @@ describe('checkTranscript', () => {
     const loop = '另外帮我确认一下编译器的缓存是不是没清干净'
     const verdict = checkTranscript({ text: loop.repeat(4), audioSeconds: 12, speechSeconds: 12 })
     expect(verdict.ok === false && verdict.check).toBe('repetition')
+  })
+})
+
+describe('trimShortTrailingMarks', () => {
+  it('drops the mark from a fragment', () => {
+    expect(trimShortTrailingMarks('编译变异。')).toBe('编译变异')
+    expect(trimShortTrailingMarks('好的，')).toBe('好的')
+    expect(trimShortTrailingMarks('开始？')).toBe('开始')
+  })
+
+  it('leaves a fragment with no mark alone', () => {
+    expect(trimShortTrailingMarks('编译变异')).toBe('编译变异')
+  })
+
+  it('keeps the mark once the sentence is long enough', () => {
+    expect(trimShortTrailingMarks('帮我排查一个线上问题。')).toBe('帮我排查一个线上问题。')
+  })
+
+  it('counts only the spoken characters', () => {
+    expect(contentLength('编译变异。')).toBe(4)
+    expect(contentLength('a b，c')).toBe(3)
+    expect(trimShortTrailingMarks('一，二，三，四，五。')).toBe('一，二，三，四，五')
   })
 })

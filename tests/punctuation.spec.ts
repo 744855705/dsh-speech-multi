@@ -46,3 +46,10 @@ describe('punctuateOrKeep', () => {
       .resolves.toBe('加载失败也要保留文本')
   })
 })
+
+describe('punctuation of fragments', () => {
+  it('does not punctuate a very short transcript', async () => {
+    await expect(punctuateOrKeep('/nonexistent', '编译')).resolves.toBe('编译')
+    await expect(punctuateOrKeep('/nonexistent', '好的。')).resolves.toBe('好的。')
+  })
+})

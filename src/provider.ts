@@ -25,7 +25,7 @@ import { z } from 'zod'
 import type { ModelDescriptor } from './catalog.ts'
 import type { Config } from './config.ts'
 import { withDeadline } from './deadline.ts'
-import { checkTranscript, sanitize } from './health.ts'
+import { checkTranscript, sanitize, trimShortTrailingMarks } from './health.ts'
 import type { AssetManifest } from './runtime/assets.ts'
 import type { DownloadProgress } from './runtime/download.ts'
 import { ensureModel, ensureShared, isInstalled, isSharedInstalled, modelRoot, type SharedPaths } from './runtime/prepare.ts'
@@ -419,7 +419,7 @@ export class ModelProvider implements SpeechPreparation {
       })
       const payload = await this.readReply(response)
       call.throwIfAborted()
-      const text = sanitize(payload.text)
+      const text = trimShortTrailingMarks(sanitize(payload.text))
       const verdict = checkTranscript({
         text,
         audioSeconds: payload.audioSeconds,

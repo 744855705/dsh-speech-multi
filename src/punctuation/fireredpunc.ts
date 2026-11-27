@@ -12,6 +12,7 @@
  *   installs anywhere.
  */
 import { createRequire } from 'node:module'
+import { contentLength, SHORT_UTTERANCE_CHARS } from '../health.ts'
 import { dirname, sep } from 'node:path'
 
 /** Punctuation labels the model can emit, indexed by class. */
@@ -166,6 +167,8 @@ export async function punctuate(directory: string, text: string): Promise<string
  */
 export async function punctuateOrKeep(directory: string | undefined, text: string): Promise<string> {
   if (directory === undefined) return text
+  // A fragment this short gains nothing from a sentence mark, and the model tends to add one.
+  if (contentLength(text) <= SHORT_UTTERANCE_CHARS) return text
   try {
     return await punctuate(directory, text)
   } catch {
