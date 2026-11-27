@@ -40,6 +40,8 @@ export interface DecodeResult {
     readonly text: string;
     readonly blocks: number;
     readonly audioSeconds: number;
+    /** Speech the detector actually found; silence must not be judged like speech. */
+    readonly speechSeconds: number;
     readonly inferenceSeconds: number;
 }
 /**

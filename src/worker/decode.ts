@@ -38,6 +38,8 @@ export interface DecodeResult {
   readonly text: string
   readonly blocks: number
   readonly audioSeconds: number
+  /** Speech the detector actually found; silence must not be judged like speech. */
+  readonly speechSeconds: number
   readonly inferenceSeconds: number
 }
 
@@ -78,12 +80,14 @@ export async function decodeRecording(request: DecodeRequest): Promise<DecodeRes
     const piece = request.recognizer.getResult(stream).text.trim()
     if (piece.length > 0) parts.push(piece)
   }
+  const speechSamples = request.segments.reduce((total, region) => total + Math.max(0, region.end - region.start), 0)
   const joined = parts.join('')
   const text = request.punctuate === undefined ? joined : await request.punctuate(joined)
   return {
     text,
     blocks: blocks.length,
     audioSeconds: request.samples.length / request.sampleRate,
+    speechSeconds: Math.min(speechSamples, request.samples.length) / request.sampleRate,
     inferenceSeconds: (performance.now() - started) / 1000,
   }
 }

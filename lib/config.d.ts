@@ -1,7 +1,7 @@
 import z from '@deepseek-ai/schemastery';
 import { type ModelId } from './catalog.ts';
-/** Placeholder release base URL; an installation must point it at its own release. */
-export declare const DEFAULT_RELEASE_BASE_URL = "https://github.com/CHANGE_ME/dsh-speech-multi/releases/download/models-v1";
+/** Release that serves the archives listed in `runtime/assets.json`. */
+export declare const DEFAULT_RELEASE_BASE_URL = "https://github.com/744855705/dsh-speech-multi/releases/download/models-v1";
 /**
  * Resolve the harness home shared by every profile: `$DSH_HOME`, otherwise `~/.dsh`.
  * @param env - environment to read.

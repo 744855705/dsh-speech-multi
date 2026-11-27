@@ -100,6 +100,7 @@ async function main(): Promise<void> {
       text: result.text,
       blocks: result.blocks,
       audioSeconds: result.audioSeconds,
+      speechSeconds: result.speechSeconds,
       inferenceSeconds: result.inferenceSeconds,
     }
   })

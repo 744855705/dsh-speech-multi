@@ -5,8 +5,8 @@ import z from '@deepseek-ai/schemastery'
 import { modelIds, type ModelId } from './catalog.ts'
 import { MAX_TIMER_DELAY_MS } from './deadline.ts'
 
-/** Placeholder release base URL; an installation must point it at its own release. */
-export const DEFAULT_RELEASE_BASE_URL = 'https://github.com/CHANGE_ME/dsh-speech-multi/releases/download/models-v1'
+/** Release that serves the archives listed in `runtime/assets.json`. */
+export const DEFAULT_RELEASE_BASE_URL = 'https://github.com/744855705/dsh-speech-multi/releases/download/models-v1'
 
 /** Expand a leading `~` against the operating-system home. */
 function expandHome(value: string, home: string): string {
@@ -144,9 +144,6 @@ export function validateConfig(config: Config): void {
   }
   if (url.protocol !== 'https:' || url.username !== '' || url.password !== '') {
     throw new Error('speech-multi releaseBaseUrl must be HTTPS without credentials')
-  }
-  if (url.hostname === 'github.com' && url.pathname.startsWith('/CHANGE_ME/')) {
-    throw new Error('speech-multi releaseBaseUrl still points at the placeholder; set it to your own release')
   }
 }
 

@@ -24,7 +24,7 @@ import { z } from 'zod'
 import type { ModelDescriptor } from './catalog.ts'
 import type { Config } from './config.ts'
 import { withDeadline } from './deadline.ts'
-import { checkTranscript } from './health.ts'
+import { checkTranscript, sanitize } from './health.ts'
 import type { AssetManifest } from './runtime/assets.ts'
 import type { DownloadProgress } from './runtime/download.ts'
 import { ensureModel, ensureShared, type SharedPaths } from './runtime/prepare.ts'
@@ -34,6 +34,7 @@ const replySchema = z.object({
   text: z.string(),
   blocks: z.number().int().nonnegative(),
   audioSeconds: z.number().nonnegative(),
+  speechSeconds: z.number().nonnegative(),
   inferenceSeconds: z.number().nonnegative(),
 }).strict()
 
@@ -397,13 +398,18 @@ export class ModelProvider implements SpeechPreparation {
       })
       const payload = await this.readReply(response)
       call.throwIfAborted()
-      const verdict = checkTranscript({ text: payload.text, audioSeconds: payload.audioSeconds })
+      const text = sanitize(payload.text)
+      const verdict = checkTranscript({
+        text,
+        audioSeconds: payload.audioSeconds,
+        speechSeconds: payload.speechSeconds,
+      })
       if (!verdict.ok) {
         this.failures += 1
         this.ctx.logger.warn(`speech-multi rejected a ${this.model.id} transcript (${verdict.check}): ${verdict.detail}`)
         throw new Error(`speech-multi rejected the ${this.model.id} transcript (${verdict.check}): ${verdict.detail}`)
       }
-      return { text: payload.text, audioSeconds: payload.audioSeconds, inferenceSeconds: payload.inferenceSeconds }
+      return { text, audioSeconds: payload.audioSeconds, inferenceSeconds: payload.inferenceSeconds }
     } catch (error) {
       await this.stop()
       this.publish({ phase: 'standby' })

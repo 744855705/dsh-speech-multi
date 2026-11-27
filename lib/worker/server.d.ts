@@ -4,6 +4,7 @@ export interface WorkerReply {
     readonly text: string;
     readonly blocks: number;
     readonly audioSeconds: number;
+    readonly speechSeconds?: number;
     readonly inferenceSeconds: number;
 }
 /** Handler the server delegates to. */
