@@ -57,7 +57,7 @@ export interface Config {
     prepareTimeoutMs: number;
     /** Deadline for one recording after the worker is ready. */
     inferenceTimeoutMs: number;
-    /** Idle period before the worker stops; zero keeps it warm. */
+    /** Idle period before the worker stops, four hours by default; zero keeps it warm. */
     idleTimeoutMs: number;
     /** Maximum concurrent transcriptions per model. */
     maxPending: number;

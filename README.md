@@ -84,7 +84,7 @@ plugin in your own profile patch, remember to remove that line when you uninstal
 | `deviceTier` | `auto` | `light` / `standard` / `large`, or derived from total memory |
 | `threads` | `8` | CPU threads per worker |
 | `maxRecordingSeconds` | tier default | Overrides the tier ceiling |
-| `idleTimeoutMs` | `7200000` | Two hours before an idle worker is reclaimed |
+| `idleTimeoutMs` | `14400000` | Four hours before an idle worker is reclaimed |
 
 `releaseBaseUrl` must be set to your own release before any download can succeed; the shipped
 value is a placeholder and startup rejects it.
