@@ -21,6 +21,52 @@ its own worker process with its own preparation state and idle reclaimer.
 **Hard cap** is the length past which output becomes unusable; for X-ASR it terminates the
 process, so the plan is rejected before decoding.
 
+## Install from GitHub
+
+This package is not published to npm. Install it as a git checkout:
+
+```bash
+mkdir -p ~/plugins && cd ~/plugins
+git clone git@github.com:744855705/dsh-speech-multi.git
+```
+
+Then open **Settings → Plugins → Add plugin** and pick the directory
+`~/plugins/dsh-speech-multi`. The profile links that directory, so updating later is a
+`git pull` followed by a reload, not a reinstall.
+
+Some builds also accept the git spec directly in the same dialog:
+
+```
+git+https://github.com/744855705/dsh-speech-multi.git
+```
+
+`lib/` is committed, so no build step runs on install. Installing requires Node 22 or newer
+(the worker uses `zlib` zstd decompression and WebAssembly).
+
+### After installing
+
+1. Restart DSH so the four providers are registered.
+2. Pick a recognizer in **Settings → Voice**, for example `multi-xasr`.
+3. Press **Prepare** for that model. It downloads from the release pinned in
+   `runtime/assets.json` and verifies every archive against its SHA-256 before using it.
+
+Nothing is downloaded until you prepare a model, so installing all four providers costs no disk
+or bandwidth by itself.
+
+### Removing the plugin
+
+Disable or remove the bundle, then delete the model cache if you no longer need it:
+
+```bash
+rm -rf "${DSH_HOME:-$HOME/.dsh}/speech-to-text/multi"
+```
+
+The plugin never writes the profile's `cordis.patch.yml`. Its selection lock intercepts reads
+only — it reports the locked provider from `snapshot()` and routes `resolve()` to it — because
+persisting a selection through `configure()` outlives an uninstall and leaves the profile
+pointing at a provider that no longer exists. If you hand-write a `defaultProvider` for this
+plugin in your own profile patch, remember to remove that line when you uninstall it.
+
 ## Configuration
 
 | Key | Default | Purpose |
