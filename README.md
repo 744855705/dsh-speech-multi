@@ -23,25 +23,31 @@ process, so the plan is rejected before decoding.
 
 ## Install from GitHub
 
-This package is not published to npm. Install it as a git checkout:
+This package is not published to npm, but it installs straight from the repository. In
+**Settings → Plugins → Add plugin**, enter:
 
-```bash
-mkdir -p ~/plugins && cd ~/plugins
-git clone git@github.com:744855705/dsh-speech-multi.git
+```
+github:744855705/dsh-speech-multi
 ```
 
-Then open **Settings → Plugins → Add plugin** and pick the directory
-`~/plugins/dsh-speech-multi`. The profile links that directory, so updating later is a
-`git pull` followed by a reload, not a reinstall.
+That is the same form the previous FireRed plugin used. `lib/` is committed and there is no
+build step, so the tarball works as-is. Installing requires Node 22 or newer, because the worker
+uses `zlib` zstd decompression and WebAssembly.
 
-Some builds also accept the git spec directly in the same dialog:
+The full URL and a plain git checkout work too, if your build prefers them:
 
 ```
 git+https://github.com/744855705/dsh-speech-multi.git
 ```
 
-`lib/` is committed, so no build step runs on install. Installing requires Node 22 or newer
-(the worker uses `zlib` zstd decompression and WebAssembly).
+```bash
+mkdir -p ~/plugins && cd ~/plugins
+git clone git@github.com:744855705/dsh-speech-multi.git
+# then Add plugin and pick ~/plugins/dsh-speech-multi
+```
+
+A `github:` install pins a tarball per install, so updating means adding it again; the checkout
+form updates with `git pull` plus a reload.
 
 ### After installing
 
