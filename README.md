@@ -51,9 +51,15 @@ plugin unlocked rather than failing to start.
 }
 ```
 
-- `soft` reasserts `modelId` at startup and whenever the speech catalog changes.
-- `hard` also rejects selections outside `allow` and forces `resolve` to `modelId`.
+- `soft` reports `modelId` from `snapshot()` and routes `resolve()` to it.
+- `hard` also rejects selections outside `allow`.
 - Omitting `allow` permits every model this plugin registers.
+
+The lock never calls `configure()`. That matters: `configure()` persists the selection through
+the settings service into the profile's `cordis.patch.yml`, so a lock that reasserted itself
+that way would outlive its own uninstall and leave the profile pointing at a provider that no
+longer exists — which disables speech input entirely. Intercepting reads only gives the same
+behaviour with no disk write, so removing the plugin restores whatever was selected before.
 
 ## Device tiers
 

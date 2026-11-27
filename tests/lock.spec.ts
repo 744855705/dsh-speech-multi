@@ -4,7 +4,13 @@ import type { ModelId } from '../src/catalog.ts'
 
 const ALL: ModelId[] = ['multi-xasr', 'multi-funasr', 'multi-qwen3', 'multi-firered']
 
-/** In-memory speech service that records selection changes. */
+/**
+ * In-memory speech service that records every selection change.
+ *
+ * `configure` is the method that reaches the settings service and writes the profile's
+ * `cordis.patch.yml`, so the count of calls is the regression signal: a lock that calls it
+ * leaves permanent state behind after the plugin is removed.
+ */
 function fakeService(initial: string): { service: LockSpeechService; calls: string[] } {
   const calls: string[] = []
   let selection = initial
@@ -15,9 +21,6 @@ function fakeService(initial: string): { service: LockSpeechService; calls: stri
       if (patch.providerId !== undefined) selection = patch.providerId
     },
     resolve: (request) => request,
-    follow: async function* () {
-      return
-    },
   }
   return { service, calls }
 }
@@ -35,7 +38,7 @@ describe('parseLock', () => {
     expect(lock?.allow).toEqual(['multi-xasr'])
   })
 
-  it('keeps a declared whitelist and forces the target into it', () => {
+  it('forces the target into a whitelist that omits it', () => {
     const lock = parseLock({ schema: 2, mode: 'hard', modelId: 'multi-qwen3', allow: ['multi-xasr'] }, ALL)
     expect(lock?.allow).toEqual(['multi-qwen3', 'multi-xasr'])
   })
@@ -63,34 +66,58 @@ describe('parseLock', () => {
 })
 
 describe('installLock', () => {
-  it('leaves a matching selection alone', () => {
-    const { service, calls } = fakeService('multi-xasr')
+  it('never writes a selection, so uninstalling the plugin leaves no trace', () => {
+    const { service, calls } = fakeService('multi-qwen3')
     const release = installLock({ speechToText: service, logger: silent }, {
       schema: 2, mode: 'soft', modelId: 'multi-xasr', allow: ['multi-xasr'],
     })
     expect(calls).toEqual([])
     release()
+    expect(calls).toEqual([])
   })
 
-  it('reasserts the locked model when another one is selected', () => {
+  it('reports the locked model without changing the stored selection', () => {
     const { service, calls } = fakeService('multi-qwen3')
     const release = installLock({ speechToText: service, logger: silent }, {
       schema: 2, mode: 'soft', modelId: 'multi-xasr', allow: ['multi-xasr'],
     })
-    expect(calls).toEqual(['multi-xasr'])
+    expect(service.snapshot().selection.providerId).toBe('multi-xasr')
+    expect(calls).toEqual([])
     release()
+    expect(service.snapshot().selection.providerId).toBe('multi-qwen3')
   })
 
-  it('rejects selections outside the whitelist in hard mode and restores on release', async () => {
-    const { service } = fakeService('multi-xasr')
-    const original = service.configure
+  it('routes resolution to the locked model', () => {
+    const { service } = fakeService('multi-funasr')
+    const release = installLock({ speechToText: service, logger: silent }, {
+      schema: 2, mode: 'soft', modelId: 'multi-xasr', allow: ['multi-xasr'],
+    })
+    expect(service.resolve({})).toMatchObject({ providerId: 'multi-xasr' })
+    release()
+    expect(service.resolve({})).toEqual({})
+  })
+
+  it('rejects outside selections in hard mode and restores on release', async () => {
+    const { service, calls } = fakeService('multi-xasr')
+    const originalConfigure = service.configure
     const release = installLock({ speechToText: service, logger: silent }, {
       schema: 2, mode: 'hard', modelId: 'multi-xasr', allow: ['multi-xasr', 'multi-funasr'],
     })
     await expect(service.configure({ providerId: 'multi-qwen3' })).rejects.toThrow(/whitelist/u)
+    expect(calls).toEqual([])
     await expect(service.configure({ providerId: 'multi-funasr' })).resolves.toBeUndefined()
-    expect(service.resolve({})).toMatchObject({ providerId: 'multi-xasr' })
+    expect(calls).toEqual(['multi-funasr'])
     release()
-    expect(service.configure).toBe(original)
+    expect(service.configure).toBe(originalConfigure)
+    expect(service.snapshot().selection.providerId).toBe('multi-funasr')
+  })
+
+  it('is safe to release twice', () => {
+    const { service } = fakeService('multi-xasr')
+    const release = installLock({ speechToText: service, logger: silent }, {
+      schema: 2, mode: 'hard', modelId: 'multi-xasr', allow: ['multi-xasr'],
+    })
+    release()
+    expect(() => release()).not.toThrow()
   })
 })
