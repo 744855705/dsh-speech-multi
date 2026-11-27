@@ -100,10 +100,13 @@ export interface Mark {
  * @returns the transcript with marks inserted.
  */
 export function applyMarks(text: string, marks: readonly Mark[]): string {
+  const alreadyMarked = (offset: number): boolean => offset > 0 && /[，。？！、；：]/u.test(text.slice(offset - 1, offset))
   let result = ''
   let cursor = 0
   for (const { at, mark } of marks) {
     if (at <= cursor || at > text.length) continue
+    // Never stack a mark on top of a mark the decoder already produced.
+    if (alreadyMarked(at)) continue
     result += `${text.slice(cursor, at)}${mark}`
     cursor = at
   }

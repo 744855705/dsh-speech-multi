@@ -22,6 +22,15 @@ describe('applyMarks', () => {
     expect(applyMarks('短句', [{ at: 9, mark: '。' }, { at: 0, mark: '，' }])).toBe('短句')
   })
 
+  it('never stacks a mark on one the decoder already produced', () => {
+    expect(applyMarks('第一句。第二句', [{ at: 4, mark: '。' }])).toBe('第一句。第二句')
+    expect(applyMarks('第一句，第二句', [{ at: 4, mark: '，' }])).toBe('第一句，第二句')
+  })
+
+  it('still inserts where the previous character is ordinary text', () => {
+    expect(applyMarks('第一句第二句', [{ at: 3, mark: '。' }])).toBe('第一句。第二句')
+  })
+
   it('returns the text unchanged when nothing is marked', () => {
     expect(applyMarks('没有标点', [])).toBe('没有标点')
   })

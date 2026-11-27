@@ -320,7 +320,10 @@ export class ModelProvider implements SpeechPreparation {
           maxAudioBytes: this.config.maxAudioBytes,
           chunking: this.model.chunking,
           ...this.assets.vad === undefined ? {} : { vadModel: this.assets.vad },
+          // Only a model that does not punctuate itself may be punctuated again; running the
+          // punctuation model over text that already carries marks doubles them ("。。").
           ...this.assets.punctuation === undefined || !this.config.punctuation
+            || this.model.punctuation !== 'external'
             ? {} : { punctuationDirectory: this.assets.punctuation },
           detection: {
             threshold: this.config.vadThreshold,
