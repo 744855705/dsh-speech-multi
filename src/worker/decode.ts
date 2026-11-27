@@ -29,7 +29,10 @@ export interface DecodeRequest {
   readonly sampleRate: number
   /** Speech regions from whichever detector the worker chose. */
   readonly segments: readonly Span[]
-  /** Adds punctuation after the windows are joined; omitted when the model punctuates itself. */
+  /**
+   * Adds punctuation after the windows are joined. `always` is for a model that never punctuates;
+   * `bare` leaves a transcript that punctuated itself alone and covers the ones that did not.
+   */
   readonly punctuate?: ((text: string) => Promise<string>) | undefined
 }
 
