@@ -309,6 +309,17 @@ export class ModelProvider implements SpeechPreparation {
     }
   }
 
+  /**
+   * Whether this model's family takes the hotword list.
+   *
+   * The switch is per family, not global: the same list that helps Fun-ASR costs X-ASR both
+   * accuracy and speed, because that family only uses it under beam search.
+   * @returns true when the list should be sent to the worker.
+   */
+  private wantsHotwords(): boolean {
+    return this.config.hotwordsEnabled && this.config.hotwordsModels.includes(this.model.family)
+  }
+
   private async start(signal: AbortSignal): Promise<Worker> {
     if (this.worker?.closed === true) await this.stop()
     if (this.worker !== undefined) return this.worker
@@ -354,7 +365,7 @@ export class ModelProvider implements SpeechPreparation {
           maxAudioBytes: this.config.maxAudioBytes,
           chunking: this.model.chunking,
           ...this.assets.vad === undefined ? {} : { vadDirectory: this.assets.vad },
-          ...this.config.hotwordsEnabled ? { hotwords: mergeHotwords(this.config.hotwords) } : {},
+          ...this.wantsHotwords() ? { hotwords: mergeHotwords(this.config.hotwords) } : {},
           // Only a decoder that never punctuates gets a second pass. A model that emits its own
           // marks is left alone: re-punctuating it either doubles marks or, on text it chose not
           // to punctuate, invents them.

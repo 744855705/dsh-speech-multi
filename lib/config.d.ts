@@ -46,6 +46,8 @@ export interface Config {
     hotwords: string[];
     /** Turns the hotword list off without losing it. */
     hotwordsEnabled: boolean;
+    /** Families that receive the hotword list. */
+    hotwordsModels: string[];
     vadThreshold: number;
     /** Silence that separates two speech regions. */
     minSilenceSeconds: number;

@@ -161,6 +161,15 @@ models keep returning plausible-looking scores that mean nothing.
 The two detectors disagree about what their score means, which is why each declares its own
 polarity: FSMN reports a silence score, FireRedVAD a speech score.
 
+## Hotwords
+
+A built-in list of developer and AI vocabulary lives in `src/hotwords.ts`; `hotwords` in the
+configuration appends your own terms and `hotwordsEnabled` switches the whole list off.
+
+Only the families that read it as a prompt receive it, which is why `hotwordsModels` defaults to
+`['funasr']`. X-ASR can only bias under `modified_beam_search`, and forcing that mode on dictation
+measured worse than the greedy decoder it uses without the list, so it stays out by default.
+
 ## Known gaps in this build
 
 - Both neural detectors are trained on 16 kHz mono audio. A recording at another rate falls back

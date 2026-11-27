@@ -70,6 +70,8 @@ export interface Config {
   hotwords: string[]
   /** Turns the hotword list off without losing it. */
   hotwordsEnabled: boolean
+  /** Families that receive the hotword list. */
+  hotwordsModels: string[]
   vadThreshold: number
   /** Silence that separates two speech regions. */
   minSilenceSeconds: number
@@ -114,6 +116,11 @@ export const Config: z<Partial<Config>, Config> = z.object({
   hotwords: z.array(z.string().min(1)).default([]),
   /** Turns the whole hotword list off, keeping the configuration intact. */
   hotwordsEnabled: z.boolean().default(true),
+  /**
+   * Families that receive the hotword list. Only Fun-ASR reads them as a prompt; X-ASR would
+   * have to switch to beam search to use them, which measured worse than greedy on dictation.
+   */
+  hotwordsModels: z.array(z.string().min(1)).default(['funasr']),
   vadThreshold: z.number().min(0).max(1).default(0.5),
   minSilenceSeconds: z.number().min(0.01).default(0.8),
   minSpeechSeconds: z.number().min(0).default(0.1),

@@ -70,6 +70,14 @@ export declare class ModelProvider implements SpeechPreparation {
      * @returns the shared paths; an entry stays undefined when its archive is unavailable.
      */
     private refreshShared;
+    /**
+     * Whether this model's family takes the hotword list.
+     *
+     * The switch is per family, not global: the same list that helps Fun-ASR costs X-ASR both
+     * accuracy and speed, because that family only uses it under beam search.
+     * @returns true when the list should be sent to the worker.
+     */
+    private wantsHotwords;
     private start;
     /** Read the single readiness line, bounded and deadline-guarded. */
     private readPort;

@@ -44,3 +44,18 @@ describe('hotwords', () => {
     expect(JSON.stringify(qwen.modelConfig)).not.toContain('commit')
   })
 })
+
+describe('hotword scope', () => {
+  it('sends the list to Fun-ASR only by default', async () => {
+    const { Config } = await import('../src/config.ts')
+    const config = Config({})
+    expect(config.hotwordsModels).toEqual(['funasr'])
+    expect(config.hotwordsEnabled).toBe(true)
+  })
+
+  it('keeps X-ASR on greedy search when it receives no list', () => {
+    const spec = strategyFor('xasr').engine({ root: '/x' }, { threads: 1, audioSeconds: 34, hotwords: [] })
+    expect(spec.options).toEqual({ decodingMethod: 'greedy_search', maxActivePaths: 4 })
+    expect(spec.modelConfig.modelingUnit).toBeUndefined()
+  })
+})
