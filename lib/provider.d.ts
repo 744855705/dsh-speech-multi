@@ -45,6 +45,11 @@ export declare class ModelProvider implements SpeechPreparation {
      */
     private install;
     /** Inspect the cache at activation; a complete model enters standby without starting a worker. */
+    /**
+     * Probe the cache at activation. This must never download: activation happens as soon as the
+     * plugin loads, so a probe that fetched missing files would pull every registered model the
+     * first time the settings page opened, before the user asked for any of them.
+     */
     inspect(): void;
     /** Start or join preparation. */
     prepare(options?: SpeechPreparationOptions): void;

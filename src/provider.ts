@@ -7,6 +7,7 @@
  */
 import { randomBytes } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
@@ -27,7 +28,7 @@ import { withDeadline } from './deadline.ts'
 import { checkTranscript, sanitize } from './health.ts'
 import type { AssetManifest } from './runtime/assets.ts'
 import type { DownloadProgress } from './runtime/download.ts'
-import { ensureModel, ensureShared, type SharedPaths } from './runtime/prepare.ts'
+import { ensureModel, ensureShared, isInstalled, isSharedInstalled, modelRoot, type SharedPaths } from './runtime/prepare.ts'
 import { decodeWave } from './runtime/wav.ts'
 
 const replySchema = z.object({
@@ -37,6 +38,18 @@ const replySchema = z.object({
   speechSeconds: z.number().nonnegative(),
   inferenceSeconds: z.number().nonnegative(),
 }).strict()
+
+/**
+ * Where the shared assets sit once installed.
+ * @param dataRoot - model root.
+ * @returns the Silero and punctuation paths the preparation step also produces.
+ */
+function sharedPaths(dataRoot: string): SharedPaths {
+  return {
+    vad: join(dataRoot, 'vad', 'silero_vad.onnx'),
+    punctuation: join(dataRoot, 'punctuation', 'fireredpunc'),
+  }
+}
 
 /** Facts shared by every provider of one plugin instance. */
 export interface SharedRuntime {
@@ -164,28 +177,33 @@ export class ModelProvider implements SpeechPreparation {
   }
 
   /** Inspect the cache at activation; a complete model enters standby without starting a worker. */
+  /**
+   * Probe the cache at activation. This must never download: activation happens as soon as the
+   * plugin loads, so a probe that fetched missing files would pull every registered model the
+   * first time the settings page opened, before the user asked for any of them.
+   */
   inspect(): void {
     this.runPreparation(async (signal) => {
       this.publish({ phase: 'checking', step: 'check', startedAt: Date.now() })
-      const probe = withDeadline(signal, this.config.prepareTimeoutMs)
-      const installed = await this.install(probe, (progress) => {
+      const root = modelRoot(this.config.dataRoot, this.model)
+      const installed = await isInstalled(root, this.model.family)
+      signal.throwIfAborted()
+      if (!installed) {
+        this.root = undefined
+        this.assets = { vad: undefined, punctuation: undefined }
         this.publish({
-          phase: 'downloading',
-          step: 'model',
-          resource: this.model.archive,
-          completedBytes: progress.completedBytes,
-          ...progress.totalBytes === undefined ? {} : { totalBytes: progress.totalBytes },
+          phase: 'unprepared',
+          steps: (this.state.steps ?? []).map(({ kind }) => ({ kind, status: kind === 'check' ? 'complete' : 'pending' })),
         })
-      }).catch(() => undefined)
-      probe.throwIfAborted()
-      this.root = installed?.root
-      this.assets = installed?.assets ?? { vad: undefined, punctuation: undefined }
+        return
+      }
+      this.root = root
+      this.assets = (await isSharedInstalled(this.config.dataRoot))
+        ? sharedPaths(this.config.dataRoot)
+        : { vad: undefined, punctuation: undefined }
       this.publish({
-        phase: installed === undefined ? 'unprepared' : 'standby',
-        steps: (this.state.steps ?? []).map(({ kind }) => ({
-          kind,
-          status: kind === 'check' || (installed !== undefined && kind !== 'load') ? 'complete' : 'pending',
-        })),
+        phase: 'standby',
+        steps: (this.state.steps ?? []).map(({ kind }) => ({ kind, status: kind === 'load' ? 'pending' : 'complete' })),
       })
     })
   }
