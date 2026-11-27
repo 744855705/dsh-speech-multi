@@ -34,6 +34,10 @@ That is the same form the previous FireRed plugin used. `lib/` is committed and 
 build step, so the tarball works as-is. Installing requires Node 22 or newer, because the worker
 uses `zlib` zstd decompression and WebAssembly.
 
+The manifest declares `engines.dsh: >=0.2.2-rc.3 <=0.5.0`. Releases outside that range are
+rejected at install time instead of failing later: below it the speech provider API this plugin
+compiles against does not exist yet, and above it the API is unverified.
+
 The full URL and a plain git checkout work too, if your build prefers them:
 
 ```
