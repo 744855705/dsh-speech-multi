@@ -1,0 +1,11 @@
+packages:
+  - .
+
+# esbuild ships a native binary and needs its install script; everything else
+# in this package is pure JavaScript or a prebuilt native addon.
+allowBuilds:
+  esbuild: true
+  # onnxruntime-web and tokenizers ship prebuilt WebAssembly and need no build step.
+  protobufjs: false
+
+minimumReleaseAge: 0

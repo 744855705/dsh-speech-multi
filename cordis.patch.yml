@@ -1,0 +1,4 @@
+- insert:
+    - id: speech-multi
+      name: dsh-speech-multi
+      config: {}

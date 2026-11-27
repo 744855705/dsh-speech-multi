@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Multi-model speech recognition",
+    "description": "Four local speech-to-text models in one plugin, each decoded in the window it handles best; audio never leaves this machine."
+  }
+}

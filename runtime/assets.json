@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "files": {
+    "xasr-zh-en-punct-int8.tar.zst": {
+      "sha256": "a98ed06245240c4cca63e17f5f53d9f9c80f418369b083a3dbd8e0dcb44eb964",
+      "bytes": 127024168
+    },
+    "funasr-nano-1024-int8.tar.zst": {
+      "sha256": "8f47b0e7000d2caef4e33d2e64664b2bfddedce324d749549ea8f6f3a4d76e80",
+      "bytes": 760556827
+    },
+    "qwen3-asr-0.6b-int8.tar.zst": {
+      "sha256": "e6d17d34d476f8fad71efdf97dbb30c075f0926054836402c78ce81a18e516d4",
+      "bytes": 839305625
+    },
+    "firered-asr2-aed-int8.tar.zst": {
+      "sha256": "9bd628ad8afc6a1a092417933989076d873805571f608fe63a59a6df29ab5cc6",
+      "bytes": 795379135
+    },
+    "punctuation.tar.zst": {
+      "sha256": "a227a8665902ed34d5811ac9170ff300bdba48794e36a6e080890f59b4ad83ea",
+      "bytes": 248882260
+    }
+  }
+}
