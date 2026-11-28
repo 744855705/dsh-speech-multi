@@ -18,9 +18,10 @@ import type {
 import type { Config } from '../config.ts'
 import { decodeWave } from '../runtime/wav.ts'
 import { checkTranscript, trimShortTrailingMarks } from '../health.ts'
-import { LLAMA_SOURCE_ARCHIVE, ensureLlamaBinary } from './build.ts'
+import { existsSync } from 'node:fs'
+import { LLAMA_SOURCE_ARCHIVE, builtBinary, ensureLlamaBinary } from './build.ts'
 import type { GpuDevice } from './backend.ts'
-import { resolveGpuFiles, type GpuFilePaths } from './files.ts'
+import { installedGpuFiles, resolveGpuFiles, type GpuFilePaths } from './files.ts'
 import { transcribeWithLlama } from './run.ts'
 import { LlamaServer } from './server.ts'
 import { acquireGpu, touchGpu } from './registry.ts'
@@ -119,10 +120,16 @@ export class GpuProvider implements SpeechPreparation {
    */
   inspect(): void {
     if (this.running !== undefined) return
-    this.publish({
-      phase: 'unprepared',
-      steps: (this.state.steps ?? []).map(({ kind }) => ({ kind, status: kind === 'check' ? 'complete' : 'pending' })),
-    })
+    const binary = this.config.gpuBinary ?? builtBinary(this.config, this.device.backend)
+    const files = installedGpuFiles(this.config, this.spec)
+    const ready = existsSync(binary) && files !== undefined
+    if (ready) {
+      this.binary = binary
+      this.files = files
+    }
+    this.publish(ready
+      ? { phase: 'standby', steps: (this.state.steps ?? []).map(({ kind }) => ({ kind, status: 'complete' })) }
+      : { phase: 'unprepared', steps: (this.state.steps ?? []).map(({ kind }) => ({ kind, status: kind === 'check' ? 'complete' : 'pending' })) })
   }
 
   /**

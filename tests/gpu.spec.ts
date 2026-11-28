@@ -7,7 +7,7 @@ import { detectGpu, isIntegratedName, pickDiscreteDevice } from '../src/gpu/back
 import { builtBinary, discardOtherVersions, isUsableBinary, llamaVersion, sharedBuild, sourceDirectory } from '../src/gpu/build.ts'
 import { progressState } from '../src/gpu/provider.ts'
 import { acquireGpu, activeGpu, noteCpuUse } from '../src/gpu/registry.ts'
-import { resolveGpuFiles } from '../src/gpu/files.ts'
+import { gpuModelRoot, installedGpuFiles, resolveGpuFiles } from '../src/gpu/files.ts'
 import { parseTranscript } from '../src/gpu/run.ts'
 import { CONTEXT_LONG, CONTEXT_SHORT, GPU_MODELS, contextFor, runnableGpuModels } from '../src/gpu/spec.ts'
 import { loadManifest } from '../src/runtime/assets.ts'
@@ -437,5 +437,41 @@ describe('gpu residency', () => {
     await new Promise((resolve) => setTimeout(resolve, 40))
     expect(activeGpu(root)).toBe('gpu-a')
     expect(log).toEqual([])
+  })
+})
+
+describe('activation inspection', () => {
+  const created: string[] = []
+
+  afterEach(async () => {
+    for (const directory of created.splice(0)) await rm(directory, { recursive: true, force: true })
+  })
+
+  it('finds a model that is already installed instead of asking for preparation again', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'installed-'))
+    created.push(root)
+    const spec = GPU_MODELS[0]
+    if (spec === undefined) throw new Error('catalog is empty')
+    const config = Config({ dataRoot: root })
+    const target = join(gpuModelRoot(config, spec))
+    await mkdir(target, { recursive: true })
+    await writeFile(join(target, spec.modelFile), 'model')
+    await writeFile(join(target, spec.mmprojFile), 'mmproj')
+    const found = installedGpuFiles(config, spec)
+    expect(found?.model).toBe(join(target, spec.modelFile))
+    expect(found?.mmproj).toBe(join(target, spec.mmprojFile))
+  })
+
+  it('reports nothing when a file is missing, so preparation still runs', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'installed-'))
+    created.push(root)
+    const spec = GPU_MODELS[0]
+    if (spec === undefined) throw new Error('catalog is empty')
+    const config = Config({ dataRoot: root })
+    const target = join(gpuModelRoot(config, spec))
+    await mkdir(target, { recursive: true })
+    await writeFile(join(target, spec.modelFile), 'model')
+    // The audio tower is what makes the pair usable.
+    expect(installedGpuFiles(config, spec)).toBeUndefined()
   })
 })

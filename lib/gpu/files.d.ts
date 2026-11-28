@@ -21,6 +21,16 @@ export interface GpuFilesInput {
 /** Where one GPU model is installed. */
 export declare function gpuModelRoot(config: Config, spec: GpuModelSpec): string;
 /**
+ * Find the model files without touching the network or the filesystem beyond a check.
+ *
+ * Used by {@link GpuProvider.inspect} at activation: a machine that already holds the files must not
+ * be told to prepare again just because the process restarted.
+ * @param config - plugin configuration.
+ * @param spec - model to look for.
+ * @returns the paths when both files are readable.
+ */
+export declare function installedGpuFiles(config: Config, spec: GpuModelSpec): GpuFilePaths | undefined;
+/**
  * Resolve the model files, installing them when they are missing.
  * @param input - model, configuration, manifest and cancellation.
  * @returns the model and audio-tower paths.
