@@ -44,7 +44,7 @@ export interface BuildInput {
  * @returns the absolute path to `llama-mtmd-cli`.
  */
 export function builtBinary(config: Config, backend: GpuBackend): string {
-  return join(config.dataRoot, 'gpu', 'llama.cpp', `build-${backend}`, 'bin', 'llama-mtmd-cli')
+  return join(config.dataRoot, 'gpu', `build-${backend}`, 'bin', 'llama-mtmd-cli')
 }
 
 /**
@@ -75,6 +75,8 @@ export async function ensureLlamaBinary(input: BuildInput): Promise<string> {
 
   const root = join(input.config.dataRoot, 'gpu')
   await mkdir(root, { recursive: true })
+  // The archive is cached under the data root, and this path builds before any model has created it.
+  await mkdir(join(input.config.dataRoot, '.cache'), { recursive: true })
   const source = join(root, SOURCE_DIR)
   if (!(await exists(join(source, 'CMakeLists.txt')))) {
     input.onStep?.('download')
@@ -90,11 +92,7 @@ export async function ensureLlamaBinary(input: BuildInput): Promise<string> {
     input.onStep?.('extract')
     await rm(source, { recursive: true, force: true })
     await extractZip(archive, root)
-    const entries = await readdir(root)
-    const unpacked = entries.find((entry) => entry.startsWith('llama.cpp-'))
-    if (unpacked === undefined) throw new Error(`${LLAMA_SOURCE_ARCHIVE} did not contain the llama.cpp source`)
-    await rm(source, { recursive: true, force: true })
-    await renameDir(join(root, unpacked), source)
+    await adoptSource(root, source)
   }
 
   input.signal.throwIfAborted()
@@ -127,18 +125,30 @@ async function exists(path: string): Promise<boolean> {
 }
 
 /**
- * Move a directory, which `fs.rename` cannot do across filesystems.
- * @param from - existing directory.
- * @param to - destination.
+ * Move the unpacked source tree to the directory the build expects.
+ *
+ * The archive wraps its contents in one directory whose name carries the version, and a plain rename
+ * is not safe here: if the destination already exists the rename degrades into copying the source
+ * *inside* it, which leaves no CMakeLists.txt at the top and turns a recoverable install into a
+ * confusing build error. So the directory that actually holds CMakeLists.txt is found first, its
+ * contents are copied to the destination, and the unpacked tree is removed.
+ * @param root - directory the archive was expanded into.
+ * @param source - destination the build will use.
+ * @throws when no directory in the archive contains CMakeLists.txt.
  */
-async function renameDir(from: string, to: string): Promise<void> {
-  const { rename, cp } = await import('node:fs/promises')
-  try {
-    await rename(from, to)
-  } catch {
-    await cp(from, to, { recursive: true })
-    await rm(from, { recursive: true, force: true })
+async function adoptSource(root: string, source: string): Promise<void> {
+  const { cp } = await import('node:fs/promises')
+  const entries = await readdir(root, { withFileTypes: true })
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const candidate = join(root, entry.name)
+    if (!(await exists(join(candidate, 'CMakeLists.txt')))) continue
+    await rm(source, { recursive: true, force: true })
+    await cp(candidate, source, { recursive: true })
+    await rm(candidate, { recursive: true, force: true })
+    return
   }
+  throw new Error(`${LLAMA_SOURCE_ARCHIVE} did not contain a directory with CMakeLists.txt`)
 }
 
 /**

@@ -121,7 +121,11 @@ export async function fetchArchive(input: Omit<PrepareInput, 'model'>, archive: 
     ...input.onProgress === undefined ? {} : { onProgress: input.onProgress },
   }
   if (record.parts === undefined) {
-    await downloadArchive(assetUrl(input.baseUrl, record, archive), cached, record, options)
+    // A previous attempt may already have pulled this archive; re-downloading forty megabytes every
+    // time a later step fails turns one bad build into several.
+    if (!(await verifyFile(cached, record))) {
+      await downloadArchive(assetUrl(input.baseUrl, record, archive), cached, record, options)
+    }
     return cached
   }
   const slices: string[] = []
