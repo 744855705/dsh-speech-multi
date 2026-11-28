@@ -39,8 +39,13 @@ export interface HealthInput {
  * @returns the transcript with markers stripped.
  */
 export declare function sanitize(text: string): string;
-/** Content characters below which a transcript is a fragment, not a sentence. */
-export declare const SHORT_UTTERANCE_CHARS = 5;
+/**
+ * Content characters from which a transcript is a sentence rather than a fragment.
+ *
+ * Anything shorter ("好", "可以") is a word or two in answer to a prompt, and a sentence mark on the
+ * end reads as a mistake.
+ */
+export declare const PUNCTUATED_FROM_CHARS = 3;
 /**
  * Count the characters a mark could belong to.
  * @param text - transcript.
@@ -48,12 +53,13 @@ export declare const SHORT_UTTERANCE_CHARS = 5;
  */
 export declare function contentLength(text: string): number;
 /**
- * Drop the trailing punctuation of a very short utterance.
+ * Drop the trailing punctuation of a fragment.
  *
- * A five-character fragment ("编译变异", "好的", "开始") is not a sentence, so a full stop or comma
- * on the end reads as a mistake rather than as punctuation.
+ * A one- or two-character answer ("好", "可以") is not a sentence, so a full stop or comma on the end
+ * reads as a mistake rather than as punctuation. Three characters and up keep whatever mark the
+ * model chose.
  * @param text - transcript, already sanitized.
- * @returns the transcript without a trailing mark when it is short enough.
+ * @returns the transcript without a trailing mark when it is shorter than {@link PUNCTUATED_FROM_CHARS}.
  */
 export declare function trimShortTrailingMarks(text: string): string;
 /**

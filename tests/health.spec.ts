@@ -66,10 +66,15 @@ describe('checkTranscript', () => {
 })
 
 describe('trimShortTrailingMarks', () => {
-  it('drops the mark from a fragment', () => {
-    expect(trimShortTrailingMarks('编译变异。')).toBe('编译变异')
+  it('drops the mark from a fragment of one or two characters', () => {
     expect(trimShortTrailingMarks('好的，')).toBe('好的')
-    expect(trimShortTrailingMarks('开始？')).toBe('开始')
+    expect(trimShortTrailingMarks('好。')).toBe('好')
+    expect(trimShortTrailingMarks('可以？')).toBe('可以')
+  })
+
+  it('keeps the mark from three characters up', () => {
+    expect(trimShortTrailingMarks('编译变异。')).toBe('编译变异。')
+    expect(trimShortTrailingMarks('开始吧？')).toBe('开始吧？')
   })
 
   it('leaves a fragment with no mark alone', () => {
@@ -83,7 +88,8 @@ describe('trimShortTrailingMarks', () => {
   it('counts only the spoken characters', () => {
     expect(contentLength('编译变异。')).toBe(4)
     expect(contentLength('a b，c')).toBe(3)
-    expect(trimShortTrailingMarks('一，二，三，四，五。')).toBe('一，二，三，四，五')
+    // Five spoken characters, so the mark stays even though three marks sit between them.
+    expect(trimShortTrailingMarks('一，二，三，四，五。')).toBe('一，二，三，四，五。')
   })
 })
 
@@ -103,15 +109,20 @@ describe('Qwen3 schema markers', () => {
 })
 
 describe('short utterance marks', () => {
-  it('drops the ending mark of a short fragment in any script', () => {
-    // The set is Unicode punctuation, not a hand-written list, so a model that answers "Done!"
-    // behaves the same as one that answers "好的。".
+  it('drops the ending mark of a fragment shorter than three characters', () => {
+    // The set is Unicode punctuation, not a hand-written list, so a model that answers "OK." is
+    // treated the same as one that answers "好的。".
     expect(trimShortTrailingMarks('好的。')).toBe('好的')
     expect(trimShortTrailingMarks('OK.')).toBe('OK')
-    expect(trimShortTrailingMarks('Done!')).toBe('Done')
-    expect(trimShortTrailingMarks('Hello?')).toBe('Hello')
     expect(trimShortTrailingMarks('你好……')).toBe('你好')
-    expect(trimShortTrailingMarks('没问题？')).toBe('没问题')
+    expect(trimShortTrailingMarks('行。')).toBe('行')
+  })
+
+  it('keeps the mark from three characters up', () => {
+    expect(trimShortTrailingMarks('Done!')).toBe('Done!')
+    expect(trimShortTrailingMarks('Hello?')).toBe('Hello?')
+    expect(trimShortTrailingMarks('没问题？')).toBe('没问题？')
+    expect(trimShortTrailingMarks('我这边在排查。')).toBe('我这边在排查。')
   })
 
   it('leaves a fragment alone when it ends in a word', () => {
@@ -119,7 +130,7 @@ describe('short utterance marks', () => {
     expect(trimShortTrailingMarks('行')).toBe('行')
   })
 
-  it('leaves anything longer than five characters untouched', () => {
+  it('leaves a longer sentence untouched', () => {
     expect(trimShortTrailingMarks('我这边在排查一个线上的问题。')).toBe('我这边在排查一个线上的问题。')
   })
 })

@@ -97,8 +97,13 @@ function findLoop(text: string): string | undefined {
   return undefined
 }
 
-/** Content characters below which a transcript is a fragment, not a sentence. */
-export const SHORT_UTTERANCE_CHARS = 5
+/**
+ * Content characters from which a transcript is a sentence rather than a fragment.
+ *
+ * Anything shorter ("好", "可以") is a word or two in answer to a prompt, and a sentence mark on the
+ * end reads as a mistake.
+ */
+export const PUNCTUATED_FROM_CHARS = 3
 
 /**
  * Marks that may sit at the end of a fragment.
@@ -122,16 +127,17 @@ export function contentLength(text: string): number {
 }
 
 /**
- * Drop the trailing punctuation of a very short utterance.
+ * Drop the trailing punctuation of a fragment.
  *
- * A five-character fragment ("编译变异", "好的", "开始") is not a sentence, so a full stop or comma
- * on the end reads as a mistake rather than as punctuation.
+ * A one- or two-character answer ("好", "可以") is not a sentence, so a full stop or comma on the end
+ * reads as a mistake rather than as punctuation. Three characters and up keep whatever mark the
+ * model chose.
  * @param text - transcript, already sanitized.
- * @returns the transcript without a trailing mark when it is short enough.
+ * @returns the transcript without a trailing mark when it is shorter than {@link PUNCTUATED_FROM_CHARS}.
  */
 export function trimShortTrailingMarks(text: string): string {
   const trimmed = text.trimEnd()
-  if (contentLength(trimmed) === 0 || contentLength(trimmed) > SHORT_UTTERANCE_CHARS) return trimmed
+  if (contentLength(trimmed) === 0 || contentLength(trimmed) >= PUNCTUATED_FROM_CHARS) return trimmed
   return trimmed.replace(TRAILING_MARKS, '').trimEnd()
 }
 
