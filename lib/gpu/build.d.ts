@@ -28,12 +28,22 @@ export interface BuildInput {
     readonly onStep?: ((step: string) => void) | undefined;
 }
 /**
- * Where a built binary lives for one backend.
+ * Where the resident runtime lives for one backend.
+ *
+ * This is the server, not the batch CLI: the providers keep the weights loaded, and pointing them
+ * at the CLI is what silently disabled residency for a whole round of testing.
+ * @param config - plugin configuration.
+ * @param backend - backend it was compiled for.
+ * @returns the absolute path to `llama-server`.
+ */
+export declare function builtBinary(config: Config, backend: GpuBackend): string;
+/**
+ * Where the batch runtime lives, used when the resident server cannot start.
  * @param config - plugin configuration.
  * @param backend - backend it was compiled for.
  * @returns the absolute path to `llama-mtmd-cli`.
  */
-export declare function builtBinary(config: Config, backend: GpuBackend): string;
+export declare function batchBinary(config: Config, backend: GpuBackend): string;
 /**
  * Where one version and backend are compiled.
  * @param config - plugin configuration.

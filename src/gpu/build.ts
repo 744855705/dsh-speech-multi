@@ -61,12 +61,25 @@ export interface BuildInput {
 }
 
 /**
- * Where a built binary lives for one backend.
+ * Where the resident runtime lives for one backend.
+ *
+ * This is the server, not the batch CLI: the providers keep the weights loaded, and pointing them
+ * at the CLI is what silently disabled residency for a whole round of testing.
+ * @param config - plugin configuration.
+ * @param backend - backend it was compiled for.
+ * @returns the absolute path to `llama-server`.
+ */
+export function builtBinary(config: Config, backend: GpuBackend): string {
+  return join(buildDirectory(config, backend), 'bin', 'llama-server')
+}
+
+/**
+ * Where the batch runtime lives, used when the resident server cannot start.
  * @param config - plugin configuration.
  * @param backend - backend it was compiled for.
  * @returns the absolute path to `llama-mtmd-cli`.
  */
-export function builtBinary(config: Config, backend: GpuBackend): string {
+export function batchBinary(config: Config, backend: GpuBackend): string {
   return join(buildDirectory(config, backend), 'bin', 'llama-mtmd-cli')
 }
 
@@ -190,7 +203,8 @@ export async function ensureLlamaBinary(input: BuildInput): Promise<string> {
 async function buildOnce(input: BuildInput): Promise<string> {
   if (input.config.gpuBinary !== undefined) return input.config.gpuBinary
   const binary = builtBinary(input.config, input.backend)
-  if (await isUsableBinary(binary)) return binary
+  const batch = batchBinary(input.config, input.backend)
+  if ((await isUsableBinary(binary)) && (await isUsableBinary(batch))) return binary
   input.signal.throwIfAborted()
 
   const root = join(input.config.dataRoot, 'gpu')
@@ -225,7 +239,9 @@ async function buildOnce(input: BuildInput): Promise<string> {
     '-DLLAMA_CURL=OFF',
     ...BACKEND_FLAGS[input.backend],
   ], input.signal)
-  await run('cmake', ['--build', build, '-j', String(input.config.buildJobs), '--target', 'llama-mtmd-cli'], input.signal)
+  // Both targets are built: the server is what runs, and the CLI is the fallback used when it
+  // cannot start, so neither may be missing from a finished build.
+  await run('cmake', ['--build', build, '-j', String(input.config.buildJobs), '--target', 'llama-server', 'llama-mtmd-cli'], input.signal)
   if (!(await isUsableBinary(binary))) throw new Error(`llama.cpp build finished without producing ${binary}`)
   await discardOtherVersions(input.config)
   return binary

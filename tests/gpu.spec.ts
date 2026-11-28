@@ -331,7 +331,7 @@ describe('runtime version', () => {
     const config = Config({ dataRoot: '/data' })
     const path = builtBinary(config, 'hip')
     expect(path).toContain(llamaVersion())
-    expect(path.endsWith('bin/llama-mtmd-cli')).toBe(true)
+    expect(path.endsWith('bin/llama-server')).toBe(true)
     expect(builtBinary(config, 'vulkan')).not.toBe(path)
   })
 

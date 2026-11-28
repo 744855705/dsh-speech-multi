@@ -19,7 +19,7 @@ import type { Config } from '../config.ts'
 import { decodeWave } from '../runtime/wav.ts'
 import { checkTranscript, trimShortTrailingMarks } from '../health.ts'
 import { existsSync } from 'node:fs'
-import { LLAMA_SOURCE_ARCHIVE, builtBinary, ensureLlamaBinary } from './build.ts'
+import { LLAMA_SOURCE_ARCHIVE, batchBinary, builtBinary, ensureLlamaBinary } from './build.ts'
 import type { GpuDevice } from './backend.ts'
 import { installedGpuFiles, resolveGpuFiles, type GpuFilePaths } from './files.ts'
 import { transcribeWithLlama } from './run.ts'
@@ -218,7 +218,7 @@ export class GpuProvider implements SpeechPreparation {
       if (signal.aborted) throw error
       this.ctx.logger.warn(`speech-multi ${this.spec.id} resident server unavailable, transcribing in batch: ${String(error)}`)
       return await transcribeWithLlama({
-        binary,
+        binary: batchBinary(this.config, this.device.backend),
         files,
         audio: input.audio,
         audioSeconds,
