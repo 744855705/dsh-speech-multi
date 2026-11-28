@@ -62,7 +62,12 @@ export interface Config {
     prepareTimeoutMs: number;
     /** Deadline for one recording after the worker is ready. */
     inferenceTimeoutMs: number;
-    /** Idle period before the worker stops, four hours by default; zero keeps it warm. */
+    /**
+     * Idle period before a model releases its memory, two hours by default; zero keeps it warm.
+     *
+     * One setting covers both backends on purpose: a CPU worker and a resident GPU server differ in
+     * how they hold memory, not in how long the user expects them to hold it.
+     */
     idleTimeoutMs: number;
     /** Maximum concurrent transcriptions per model. */
     maxPending: number;

@@ -73,6 +73,20 @@ export declare class GpuProvider implements SpeechPreparation {
      */
     transcribe(input: SpeechInput, signal: AbortSignal): Promise<Transcript>;
     /**
+     * Transcribe through the resident server, falling back to the batch CLI.
+     *
+     * The server keeps the weights loaded, so consecutive recordings pay only for the decode. If it
+     * cannot start — no room on the device, a runtime that rejects the flags — the batch path still
+     * produces a transcript instead of failing the invitation.
+     * @param binary - runtime binary.
+     * @param files - model and audio tower.
+     * @param input - recording.
+     * @param audioSeconds - decoded length.
+     * @param signal - caller cancellation.
+     * @returns the transcript and how long it took.
+     */
+    private run;
+    /**
      * Run the whole preparation task.
      * @param signal - cancellation.
      */

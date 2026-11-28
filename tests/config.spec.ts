@@ -43,8 +43,8 @@ describe('validateConfig', () => {
     expect(() => validateConfig(config({ enabledModels: [] }))).toThrow(/at least one model/u)
   })
 
-  it('keeps an idle worker for four hours by default', () => {
-    expect(config().idleTimeoutMs).toBe(14_400_000)
+  it('keeps an idle worker for two hours by default', () => {
+    expect(config().idleTimeoutMs).toBe(7_200_000)
   })
 
   it('resolves the shared cache under the harness home', () => {

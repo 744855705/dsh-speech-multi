@@ -31,6 +31,7 @@ import type { AssetManifest } from './runtime/assets.ts'
 import type { DownloadProgress } from './runtime/download.ts'
 import { ensureModel, ensureShared, isInstalled, isSharedInstalled, modelRoot, type SharedPaths } from './runtime/prepare.ts'
 import { decodeWave } from './runtime/wav.ts'
+import { noteCpuUse } from './gpu/registry.ts'
 
 const replySchema = z.object({
   text: z.string(),
@@ -255,6 +256,9 @@ export class ModelProvider implements SpeechPreparation {
    * @returns the transcript, or a rejection when the result fails inspection.
    */
   async transcribe(input: SpeechInput, signal: AbortSignal): Promise<Transcript> {
+    // A CPU model cannot share the device, so whatever GPU model was resident is released before
+    // this recording starts rather than after the idle timeout.
+    await noteCpuUse(this.config.dataRoot)
     return await this.enqueue(async (combined) => await this.execute(input, combined), signal)
   }
 

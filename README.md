@@ -103,7 +103,7 @@ plugin in your own profile patch, remember to remove that line when you uninstal
 | `deviceTier` | `auto` | `light` / `standard` / `large`, or derived from total memory |
 | `threads` | `8` | CPU threads per worker |
 | `maxRecordingSeconds` | tier default | Overrides the tier ceiling |
-| `idleTimeoutMs` | `14400000` | Four hours before an idle worker is reclaimed |
+| `idleTimeoutMs` | `7200000` | Two hours before an idle model releases its memory |
 | `gpuEnabled` | `true` | Register the GPU providers when a discrete card is found |
 | `gpuLocalRoot` | — | Directory that already holds the GGUF files; checked before any download |
 | `gpuBinary` | — | An already-built `llama-mtmd-cli`; skips compiling the runtime |

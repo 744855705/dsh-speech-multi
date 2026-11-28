@@ -17,6 +17,7 @@ import { ModelProvider, providerInfo, type SharedRuntime } from './provider.ts'
 import { detectGpu } from './gpu/backend.ts'
 import { GpuProvider, gpuProviderInfo } from './gpu/provider.ts'
 import { runnableGpuModels } from './gpu/spec.ts'
+import { shutdownGpu } from './gpu/registry.ts'
 import { loadManifest, type AssetManifest } from './runtime/assets.ts'
 
 export { Config } from './config.ts'
@@ -80,6 +81,9 @@ export function apply(ctx: Context, config: Config): void {
       releaseLock()
       const removals = [...gpuRegistrations, ...unregisters].map((unregister) => unregister())
       await Promise.all(providers.map(async (provider) => await provider.dispose()))
+      // Unloading the plugin must take the resident GPU model with it, or the device stays reserved
+      // until the process exits.
+      await shutdownGpu(config.dataRoot)
       await Promise.all(removals)
     }
   })

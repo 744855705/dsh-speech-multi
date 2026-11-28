@@ -6,6 +6,7 @@ import { Config } from '../src/config.ts'
 import { detectGpu, isIntegratedName, pickDiscreteDevice } from '../src/gpu/backend.ts'
 import { builtBinary, discardOtherVersions, isUsableBinary, llamaVersion, sharedBuild, sourceDirectory } from '../src/gpu/build.ts'
 import { progressState } from '../src/gpu/provider.ts'
+import { acquireGpu, activeGpu, noteCpuUse } from '../src/gpu/registry.ts'
 import { resolveGpuFiles } from '../src/gpu/files.ts'
 import { parseTranscript } from '../src/gpu/run.ts'
 import { CONTEXT_LONG, CONTEXT_SHORT, GPU_MODELS, contextFor, runnableGpuModels } from '../src/gpu/spec.ts'
@@ -365,5 +366,76 @@ describe('discardOtherVersions', () => {
     expect(await isUsableBinary(join(gpu, `llama.cpp-${version}`, 'missing'))).toBe(false)
     expect(removed).not.toContain(`build-${version}-hip`)
     expect(removed).not.toContain('multi-gpu-qwen3-06b-q8')
+  })
+})
+
+describe('gpu residency', () => {
+  const created: string[] = []
+
+  afterEach(async () => {
+    for (const directory of created.splice(0)) await rm(directory, { recursive: true, force: true })
+  })
+
+  /** Minimal stand-in for a resident server. */
+  function stub(log: string[], id: string): never {
+    return {
+      async start(): Promise<number> {
+        log.push(`start:${id}`)
+        return 1
+      },
+      async stop(): Promise<void> {
+        log.push(`stop:${id}`)
+      },
+      async transcribe(): Promise<string> {
+        return ''
+      },
+      get running(): boolean {
+        return true
+      },
+    } as never
+  }
+
+  it('keeps one model resident and stops the previous one when the choice changes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'residency-'))
+    created.push(root)
+    const log: string[] = []
+    await acquireGpu(root, 'gpu-a', () => stub(log, 'a'), 0)
+    expect(activeGpu(root)).toBe('gpu-a')
+    await acquireGpu(root, 'gpu-b', () => stub(log, 'b'), 0)
+    expect(activeGpu(root)).toBe('gpu-b')
+    expect(log).toEqual(['stop:a'])
+    await noteCpuUse(root)
+    expect(activeGpu(root)).toBeUndefined()
+    expect(log).toEqual(['stop:a', 'stop:b'])
+  })
+
+  it('reuses the same server when the same model is requested again', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'residency-'))
+    created.push(root)
+    const log: string[] = []
+    const first = await acquireGpu(root, 'gpu-a', () => stub(log, 'a'), 0)
+    const second = await acquireGpu(root, 'gpu-a', () => stub(log, 'a'), 0)
+    expect(second).toBe(first)
+    expect(log).toEqual([])
+  })
+
+  it('releases the card once the idle period elapses', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'residency-'))
+    created.push(root)
+    const log: string[] = []
+    await acquireGpu(root, 'gpu-a', () => stub(log, 'a'), 10)
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    expect(activeGpu(root)).toBeUndefined()
+    expect(log).toEqual(['stop:a'])
+  })
+
+  it('keeps the model when the timeout is zero, meaning no idle release', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'residency-'))
+    created.push(root)
+    const log: string[] = []
+    await acquireGpu(root, 'gpu-a', () => stub(log, 'a'), 0)
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(activeGpu(root)).toBe('gpu-a')
+    expect(log).toEqual([])
   })
 })

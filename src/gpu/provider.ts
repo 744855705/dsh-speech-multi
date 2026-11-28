@@ -22,6 +22,8 @@ import { LLAMA_SOURCE_ARCHIVE, ensureLlamaBinary } from './build.ts'
 import type { GpuDevice } from './backend.ts'
 import { resolveGpuFiles, type GpuFilePaths } from './files.ts'
 import { transcribeWithLlama } from './run.ts'
+import { LlamaServer } from './server.ts'
+import { acquireGpu, touchGpu } from './registry.ts'
 import type { GpuModelSpec } from './spec.ts'
 import type { AssetManifest } from '../runtime/assets.ts'
 
@@ -164,14 +166,7 @@ export class GpuProvider implements SpeechPreparation {
     if (wave.seconds > ceiling) {
       throw new Error(`speech-multi accepts at most ${ceiling}s; got ${wave.seconds.toFixed(1)}s`)
     }
-    const result = await transcribeWithLlama({
-      binary,
-      files,
-      audio: input.audio,
-      audioSeconds: wave.seconds,
-      threads: this.config.threads,
-      signal,
-    })
+    const result = await this.run(binary, files, input, wave.seconds, signal)
     const verdict = checkTranscript({
       text: result.text,
       audioSeconds: wave.seconds,
@@ -183,6 +178,47 @@ export class GpuProvider implements SpeechPreparation {
     // The same short-utterance rule the CPU providers apply: a fragment of a few characters reads
     // better without the sentence mark the model appended.
     return { text: trimShortTrailingMarks(result.text), audioSeconds: wave.seconds, inferenceSeconds: result.inferenceSeconds }
+  }
+
+  /**
+   * Transcribe through the resident server, falling back to the batch CLI.
+   *
+   * The server keeps the weights loaded, so consecutive recordings pay only for the decode. If it
+   * cannot start — no room on the device, a runtime that rejects the flags — the batch path still
+   * produces a transcript instead of failing the invitation.
+   * @param binary - runtime binary.
+   * @param files - model and audio tower.
+   * @param input - recording.
+   * @param audioSeconds - decoded length.
+   * @param signal - caller cancellation.
+   * @returns the transcript and how long it took.
+   */
+  private async run(binary: string, files: GpuFilePaths, input: SpeechInput, audioSeconds: number,
+    signal: AbortSignal): Promise<{ text: string; inferenceSeconds: number }> {
+    const started = Date.now()
+    try {
+      const server = await acquireGpu(this.config.dataRoot, this.spec.id, () => new LlamaServer({
+        binary,
+        files,
+        threads: this.config.threads,
+        onLog: (line) => this.ctx.logger.debug?.(`speech-multi ${this.spec.id}: ${line}`),
+      }), this.config.idleTimeoutMs)
+      if (!server.running) await server.start(signal)
+      touchGpu(this.config.dataRoot, this.config.idleTimeoutMs)
+      const text = await server.transcribe(input.audio, signal)
+      return { text, inferenceSeconds: (Date.now() - started) / 1000 }
+    } catch (error) {
+      if (signal.aborted) throw error
+      this.ctx.logger.warn(`speech-multi ${this.spec.id} resident server unavailable, transcribing in batch: ${String(error)}`)
+      return await transcribeWithLlama({
+        binary,
+        files,
+        audio: input.audio,
+        audioSeconds,
+        threads: this.config.threads,
+        signal,
+      })
+    }
   }
 
   /**
