@@ -87,6 +87,13 @@ export declare class GpuProvider implements SpeechPreparation {
      */
     private run;
     /**
+     * Re-check the disk when the shared runtime becomes available.
+     *
+     * Called through {@link onRuntimeAvailable}: the runtime is shared by every GPU model, so the
+     * provider that prepared first also finished the work for the others.
+     */
+    refresh(): void;
+    /**
      * Run the whole preparation task.
      * @param signal - cancellation.
      */

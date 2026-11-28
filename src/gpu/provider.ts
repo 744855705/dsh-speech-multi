@@ -229,6 +229,18 @@ export class GpuProvider implements SpeechPreparation {
   }
 
   /**
+   * Re-check the disk when the shared runtime becomes available.
+   *
+   * Called through {@link onRuntimeAvailable}: the runtime is shared by every GPU model, so the
+   * provider that prepared first also finished the work for the others.
+   */
+  refresh(): void {
+    if (this.running !== undefined) return
+    if (this.state.phase === 'ready') return
+    this.inspect()
+  }
+
+  /**
    * Run the whole preparation task.
    * @param signal - cancellation.
    */

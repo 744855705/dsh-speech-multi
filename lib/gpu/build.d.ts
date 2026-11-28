@@ -58,6 +58,23 @@ export declare function buildDirectory(config: Config, backend: GpuBackend): str
  */
 export declare function isUsableBinary(path: string): Promise<boolean>;
 /**
+ * Subscribe to runtime availability.
+ *
+ * The runtime is shared, so the provider that happened to prepare first builds it for every model.
+ * Without this, the other providers keep the "unprepared" state they published at activation until
+ * the user prepares each of them in turn.
+ * @param listener - called after a successful build or when an existing binary is found.
+ * @returns its disposer.
+ */
+export declare function onRuntimeAvailable(listener: () => void): () => void;
+/**
+ * Announce that a runtime is usable.
+ *
+ * Called from the build path: the first provider to prepare pays for the compile, and every other
+ * provider needs to re-check the disk once that finishes.
+ */
+export declare function notifyRuntimeAvailable(): void;
+/**
  * Join an in-flight build instead of starting a second one.
  *
  * Several GPU providers share one binary, and preparing two models at once must not extract the

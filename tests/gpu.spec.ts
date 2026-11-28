@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Config } from '../src/config.ts'
 import { detectGpu, isIntegratedName, pickDiscreteDevice } from '../src/gpu/backend.ts'
-import { builtBinary, discardOtherVersions, isUsableBinary, llamaVersion, sharedBuild, sourceDirectory } from '../src/gpu/build.ts'
+import { builtBinary, discardOtherVersions, isUsableBinary, llamaVersion, notifyRuntimeAvailable, onRuntimeAvailable, sharedBuild, sourceDirectory } from '../src/gpu/build.ts'
 import { progressState } from '../src/gpu/provider.ts'
 import { acquireGpu, activeGpu, noteCpuUse } from '../src/gpu/registry.ts'
 import { gpuModelRoot, installedGpuFiles, resolveGpuFiles } from '../src/gpu/files.ts'
@@ -473,5 +473,20 @@ describe('activation inspection', () => {
     await writeFile(join(target, spec.modelFile), 'model')
     // The audio tower is what makes the pair usable.
     expect(installedGpuFiles(config, spec)).toBeUndefined()
+  })
+})
+
+describe('runtime availability', () => {
+  it('tells every listener when the shared runtime becomes usable', async () => {
+    let calls = 0
+    const stop = onRuntimeAvailable(() => {
+      calls += 1
+    })
+    notifyRuntimeAvailable()
+    notifyRuntimeAvailable()
+    stop()
+    notifyRuntimeAvailable()
+    // Unsubscribed listeners stop hearing about it, so a disposed plugin cannot be woken.
+    expect(calls).toBe(2)
   })
 })

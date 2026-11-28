@@ -122,6 +122,35 @@ interface RunningBuild {
 /** Builds already under way, keyed by data root and backend. */
 const RUNNING = new Map<string, RunningBuild>()
 
+/** Listeners told when a runtime became available. */
+const BUILT = new Set<() => void>()
+
+/**
+ * Subscribe to runtime availability.
+ *
+ * The runtime is shared, so the provider that happened to prepare first builds it for every model.
+ * Without this, the other providers keep the "unprepared" state they published at activation until
+ * the user prepares each of them in turn.
+ * @param listener - called after a successful build or when an existing binary is found.
+ * @returns its disposer.
+ */
+export function onRuntimeAvailable(listener: () => void): () => void {
+  BUILT.add(listener)
+  return () => {
+    BUILT.delete(listener)
+  }
+}
+
+/**
+ * Announce that a runtime is usable.
+ *
+ * Called from the build path: the first provider to prepare pays for the compile, and every other
+ * provider needs to re-check the disk once that finishes.
+ */
+export function notifyRuntimeAvailable(): void {
+  for (const listener of BUILT) listener()
+}
+
 /**
  * Join an in-flight build instead of starting a second one.
  *
@@ -204,7 +233,10 @@ async function buildOnce(input: BuildInput): Promise<string> {
   if (input.config.gpuBinary !== undefined) return input.config.gpuBinary
   const binary = builtBinary(input.config, input.backend)
   const batch = batchBinary(input.config, input.backend)
-  if ((await isUsableBinary(binary)) && (await isUsableBinary(batch))) return binary
+  if ((await isUsableBinary(binary)) && (await isUsableBinary(batch))) {
+    notifyRuntimeAvailable()
+    return binary
+  }
   input.signal.throwIfAborted()
 
   const root = join(input.config.dataRoot, 'gpu')
@@ -244,6 +276,7 @@ async function buildOnce(input: BuildInput): Promise<string> {
   await run('cmake', ['--build', build, '-j', String(input.config.buildJobs), '--target', 'llama-server', 'llama-mtmd-cli'], input.signal)
   if (!(await isUsableBinary(binary))) throw new Error(`llama.cpp build finished without producing ${binary}`)
   await discardOtherVersions(input.config)
+  notifyRuntimeAvailable()
   return binary
 }
 

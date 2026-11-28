@@ -18,6 +18,7 @@ import { detectGpu } from './gpu/backend.ts'
 import { GpuProvider, gpuProviderInfo } from './gpu/provider.ts'
 import { runnableGpuModels } from './gpu/spec.ts'
 import { shutdownGpu } from './gpu/registry.ts'
+import { onRuntimeAvailable } from './gpu/build.ts'
 import { loadManifest, type AssetManifest } from './runtime/assets.ts'
 
 export { Config } from './config.ts'
@@ -64,6 +65,10 @@ export function apply(ctx: Context, config: Config): void {
       transcribe: async (input, signal) => await provider.transcribe(input, signal),
     }))
     for (const provider of gpu) provider.inspect()
+    // One provider builds the shared runtime; the rest must notice it is there.
+    const stopWatching = onRuntimeAvailable(() => {
+      for (const provider of gpu) provider.refresh()
+    })
     const unregisters = providers.map((provider) => ctx.speechToText.register({
       info: providerInfo(provider.model),
       preparation: provider,
@@ -78,6 +83,7 @@ export function apply(ctx: Context, config: Config): void {
       logger: ctx.logger,
     }, lock)
     return async () => {
+      stopWatching()
       releaseLock()
       const removals = [...gpuRegistrations, ...unregisters].map((unregister) => unregister())
       await Promise.all(providers.map(async (provider) => await provider.dispose()))
