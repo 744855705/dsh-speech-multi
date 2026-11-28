@@ -86,3 +86,18 @@ describe('trimShortTrailingMarks', () => {
     expect(trimShortTrailingMarks('一，二，三，四，五。')).toBe('一，二，三，四，五')
   })
 })
+
+describe('Qwen3 schema markers', () => {
+  it('drops the language prefix a cold block start emits', () => {
+    expect(sanitize('language Chinese<asr_text>工期明显变长。')).toBe('工期明显变长。')
+    expect(sanitize('前一句。language English <asr_text>后一句')).toBe('前一句。 后一句')
+  })
+
+  it('drops the marker when it appears alone', () => {
+    expect(sanitize('<asr_text>发现有几条 SQL')).toBe('发现有几条 SQL')
+  })
+
+  it('leaves a genuine mention of the word intact', () => {
+    expect(sanitize('我们讨论 language 这个单词')).toBe('我们讨论 language 这个单词')
+  })
+})

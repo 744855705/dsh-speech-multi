@@ -1,19 +1,15 @@
 /** Model acquisition: inspect what is on disk, then download, verify and expand what is missing. */
+import { createReadStream, createWriteStream } from 'node:fs'
 import { access, mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
+import { pipeline } from 'node:stream/promises'
 import type { FamilyId, ModelDescriptor } from '../catalog.ts'
-import { archiveUrl, assetFor, type AssetManifest } from './assets.ts'
-import { downloadArchive, type DownloadProgress } from './download.ts'
+import { assetFor, assetUrl, type AssetManifest, type AssetRecord } from './assets.ts'
+import { downloadArchive, verifyFile, type DownloadProgress } from './download.ts'
 import { extractTarZst } from './tar.ts'
-
-/** Archive holding the punctuation model, used by the one model that does not punctuate itself. */
-export const PUNCTUATION_ARCHIVE = 'punctuation.tar.zst'
 
 /** Archive holding both voice-activity detectors, shared by every model. */
 export const VAD_ARCHIVE = 'vad.tar.zst'
-
-/** File whose presence proves the punctuation archive finished expanding. */
-const PUNCTUATION_MARKER = join('punctuation', 'fireredpunc', 'punc.fp16.onnx')
 
 /** File whose presence proves the VAD archive finished expanding. */
 const VAD_MARKER = join('vad', 'fsmn.onnx')
@@ -22,8 +18,6 @@ const VAD_MARKER = join('vad', 'fsmn.onnx')
 const MARKERS: Readonly<Record<FamilyId, string>> = {
   xasr: 'tokens.txt',
   funasr: 'llm.int8.onnx',
-  qwen3: 'encoder.int8.onnx',
-  firered: 'tokens.txt',
 }
 
 /** Where one model's files live. */
@@ -53,10 +47,8 @@ export async function isInstalled(root: string, family: FamilyId): Promise<boole
 
 /** Shared asset locations resolved for one model. */
 export interface SharedPaths {
-  /** Silero VAD model, when the shared archive is installed. */
+  /** Directory holding the voice-activity detectors, when the shared archive is installed. */
   readonly vad: string | undefined
-  /** FireRedPunc directory, when the shared archive is installed. */
-  readonly punctuation: string | undefined
 }
 
 /**
@@ -66,7 +58,6 @@ export interface SharedPaths {
  */
 export async function isSharedInstalled(dataRoot: string): Promise<boolean> {
   try {
-    await access(join(dataRoot, PUNCTUATION_MARKER))
     await access(join(dataRoot, VAD_MARKER))
     return true
   } catch {
@@ -82,7 +73,69 @@ export interface PrepareInput {
   readonly manifest: AssetManifest
   readonly signal: AbortSignal
   readonly progressIntervalMs: number
+  /** Parallel range requests for a large archive. */
+  readonly segments?: number | undefined
   readonly onProgress?: ((progress: DownloadProgress) => void) | undefined
+}
+
+
+/**
+ * Concatenate the slices of one archive and verify the result.
+ *
+ * The digest covers the whole archive, so a slice that was silently truncated or swapped is caught
+ * here rather than by the extractor minutes later.
+ * @param slices - parts in publication order.
+ * @param destination - file to write.
+ * @param record - expected digest and length of the whole archive.
+ * @throws when the joined file does not match; nothing is left behind in that case.
+ */
+export async function joinParts(slices: readonly string[], destination: string, record: AssetRecord): Promise<void> {
+  await rm(destination, { force: true })
+  await pipeline(async function* () {
+    for (const slice of slices) yield* createReadStream(slice)
+  }, createWriteStream(destination))
+  if (!(await verifyFile(destination, record))) {
+    await rm(destination, { force: true })
+    throw new Error(`speech-multi archive did not match the published digest after joining ${slices.length} parts`)
+  }
+}
+
+/**
+ * Fetch one archive into the cache, reassembling it when the manifest publishes it in parts.
+ *
+ * Each slice is verified before it is joined, and the joined file is verified again: a host that
+ * silently truncates an upload is otherwise installed as a corrupt archive.
+ * @param input - locations, manifest and cancellation.
+ * @param archive - archive file name.
+ * @param record - its published digest and, when split, its slices.
+ * @returns the cached archive path.
+ */
+export async function fetchArchive(input: Omit<PrepareInput, 'model'>, archive: string,
+  record: AssetRecord): Promise<string> {
+  const cacheDir = join(input.dataRoot, '.cache')
+  const cached = join(cacheDir, archive)
+  const options = {
+    signal: input.signal,
+    progressIntervalMs: input.progressIntervalMs,
+    ...input.segments === undefined ? {} : { segments: input.segments },
+    ...input.onProgress === undefined ? {} : { onProgress: input.onProgress },
+  }
+  if (record.parts === undefined) {
+    await downloadArchive(assetUrl(input.baseUrl, record, archive), cached, record, options)
+    return cached
+  }
+  const slices: string[] = []
+  for (const part of record.parts) {
+    const slice = join(cacheDir, part.name)
+    if (!(await verifyFile(slice, part))) {
+      await downloadArchive(assetUrl(input.baseUrl, record, part.name), slice, part, options)
+    }
+    slices.push(slice)
+  }
+  input.signal.throwIfAborted()
+  await joinParts(slices, cached, record)
+  for (const slice of slices) await rm(slice, { force: true })
+  return cached
 }
 
 /**
@@ -100,11 +153,7 @@ export async function ensureModel(input: PrepareInput): Promise<string> {
   const cached = archiveCache(input.dataRoot, input.model)
   await mkdir(join(input.dataRoot, '.cache'), { recursive: true })
   if (!(await isInstalled(cached, input.model.family))) {
-    await downloadArchive(archiveUrl(input.baseUrl, input.model.archive), cached, record, {
-      signal: input.signal,
-      progressIntervalMs: input.progressIntervalMs,
-      ...input.onProgress === undefined ? {} : { onProgress: input.onProgress },
-    })
+    await fetchArchive(input, input.model.archive, record)
   }
   input.signal.throwIfAborted()
   await rm(root, { recursive: true, force: true })
@@ -123,14 +172,10 @@ export async function ensureModel(input: PrepareInput): Promise<string> {
 
 /**
  * Make the shared archives available.
- *
- * Punctuation is needed by exactly one model, the VAD by all of them, and they ship separately so
- * replacing a detector does not force a re-download of the 248 MB punctuation archive.
  * @param input - locations, manifest and cancellation.
  * @returns the resolved shared paths; an entry stays undefined when its archive is not published.
  */
 export async function ensureShared(input: Omit<PrepareInput, 'model'>): Promise<SharedPaths> {
-  const punctuation = join(input.dataRoot, 'punctuation', 'fireredpunc')
   const vad = join(input.dataRoot, 'vad')
   await mkdir(join(input.dataRoot, '.cache'), { recursive: true })
   const fetch = async (archive: string, marker: string): Promise<boolean> => {
@@ -142,16 +187,10 @@ export async function ensureShared(input: Omit<PrepareInput, 'model'>): Promise<
     }
     const record = input.manifest.files[archive]
     if (record === undefined) return false
-    const cached = join(input.dataRoot, '.cache', archive)
-    await downloadArchive(archiveUrl(input.baseUrl, archive), cached, record, {
-      signal: input.signal,
-      progressIntervalMs: input.progressIntervalMs,
-      ...input.onProgress === undefined ? {} : { onProgress: input.onProgress },
-    })
+    const cached = await fetchArchive(input, archive, record)
     await extractTarZst(cached, input.dataRoot)
     return true
   }
-  const punctuationReady = await fetch(PUNCTUATION_ARCHIVE, PUNCTUATION_MARKER)
   const vadReady = await fetch(VAD_ARCHIVE, VAD_MARKER)
-  return { vad: vadReady ? vad : undefined, punctuation: punctuationReady ? punctuation : undefined }
+  return { vad: vadReady ? vad : undefined }
 }

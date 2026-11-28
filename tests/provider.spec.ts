@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { findModel } from '../src/catalog.ts'
 import { Config } from '../src/config.ts'
+import { modelIds } from '../src/catalog.ts'
 import { ModelProvider } from '../src/provider.ts'
 import { loadManifest } from '../src/runtime/assets.ts'
 
@@ -67,7 +68,7 @@ describe('activation probe', () => {
   it('stays unprepared for every registered model', async () => {
     const { ctx } = fakeContext()
     const config = Config({ dataRoot, releaseBaseUrl: 'https://127.0.0.1:9/releases/models-v1' })
-    const providers = ['multi-xasr', 'multi-funasr', 'multi-qwen3', 'multi-firered'].map((id) => {
+    const providers = modelIds().map((id) => {
       const model = findModel(id)
       if (model === undefined) throw new Error(`catalog is missing ${id}`)
       return new ModelProvider(ctx, config, model, {

@@ -1,5 +1,6 @@
 import z from '@deepseek-ai/schemastery';
 import { type ModelId } from './catalog.ts';
+import type { GpuBackend } from './gpu/backend.ts';
 /** Release that serves the archives listed in `runtime/assets.json`. */
 export declare const DEFAULT_RELEASE_BASE_URL = "https://github.com/744855705/dsh-speech-multi/releases/download/models-v1";
 /**
@@ -39,8 +40,6 @@ export interface Config {
     deviceTier: DeviceTierChoice;
     /** CPU intra-operation threads handed to every worker. */
     threads: number;
-    /** Add punctuation for models that do not emit it themselves. */
-    punctuation: boolean;
     /** Silero speech probability threshold. */
     /** Extra hotwords appended to the built-in list. */
     hotwords: string[];
@@ -75,6 +74,21 @@ export interface Config {
     maxResponseBytes: number;
     /** Minimum interval between download progress updates. */
     progressIntervalMs: number;
+    /** Parallel range requests for a large archive; 1 downloads in a single stream. */
+    downloadSegments: number;
+    /** Registers the GPU providers when a usable device is found. */
+    gpuEnabled: boolean;
+    /**
+     * Directory that already holds the GGUF files, checked before anything is downloaded.
+     *
+     * This is how a machine reuses a model set it obtained by other means, and how the plugin is
+     * tested before a release exists.
+     */
+    gpuLocalRoot?: string | undefined;
+    /** An already-built `llama-mtmd-cli`; setting it skips compiling the runtime. */
+    gpuBinary?: string | undefined;
+    /** Forces one GPU backend instead of probing in preference order. */
+    gpuBackend?: GpuBackend | undefined;
 }
 /** Schema validated at plugin activation. */
 export declare const Config: z<Partial<Config>, Config>;

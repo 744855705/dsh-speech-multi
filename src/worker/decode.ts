@@ -31,11 +31,6 @@ export interface DecodeRequest {
   readonly hotwords?: string
   /** Speech regions from whichever detector the worker chose. */
   readonly segments: readonly Span[]
-  /**
-   * Adds punctuation after the windows are joined. `always` is for a model that never punctuates;
-   * `bare` leaves a transcript that punctuated itself alone and covers the ones that did not.
-   */
-  readonly punctuate?: ((text: string) => Promise<string>) | undefined
 }
 
 /** Result of one decode. */
@@ -67,7 +62,7 @@ export function planRecording(request: Pick<DecodeRequest, 'samples' | 'sampleRa
 }
 
 /**
- * Decode a recording block by block, join the transcripts, then punctuate if asked.
+ * Decode a recording block by block and join the transcripts.
  * @param request - recognizer, samples, regions and policy.
  * @returns joined text with timing.
  */
@@ -89,7 +84,7 @@ export async function decodeRecording(request: DecodeRequest): Promise<DecodeRes
   }
   const speechSamples = request.segments.reduce((total, region) => total + Math.max(0, region.end - region.start), 0)
   const joined = parts.join('')
-  const text = request.punctuate === undefined ? joined : await request.punctuate(joined)
+  const text = joined
   return {
     text,
     blocks: blocks.length,

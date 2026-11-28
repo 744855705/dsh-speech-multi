@@ -4,10 +4,16 @@
  * hard-coding a model name, so adding a fifth model is a catalog edit plus one strategy.
  */
 /** Registered provider ids; consumers select one of these exact ids. */
-export type ModelId = 'multi-xasr' | 'multi-funasr' | 'multi-qwen3' | 'multi-firered';
+export type ModelId = 'multi-xasr' | 'multi-funasr';
 /** Recognizer family; selects the strategy that builds the sherpa-onnx configuration. */
-export type FamilyId = 'xasr' | 'funasr' | 'qwen3' | 'firered';
-/** Where a model's punctuation comes from: the decoder itself, or the shared punctuation model. */
+export type FamilyId = 'xasr' | 'funasr';
+/**
+ * Where a model's punctuation comes from.
+ *
+ * Descriptive only: every remaining decoder punctuates itself, and the second-pass wiring was
+ * removed with the model that needed it. `external` stays in the union so a future decoder that
+ * needs the pass can declare it without reshaping the descriptor.
+ */
 export type PunctuationSource = 'builtin' | 'external';
 /**
  * Per-model decoding window. `blockSeconds` is the measured best-quality window, not the

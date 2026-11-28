@@ -1,8 +1,6 @@
 import type { FamilyId, ModelDescriptor } from '../catalog.ts';
-import { type AssetManifest } from './assets.ts';
+import { type AssetManifest, type AssetRecord } from './assets.ts';
 import { type DownloadProgress } from './download.ts';
-/** Archive holding the punctuation model, used by the one model that does not punctuate itself. */
-export declare const PUNCTUATION_ARCHIVE = "punctuation.tar.zst";
 /** Archive holding both voice-activity detectors, shared by every model. */
 export declare const VAD_ARCHIVE = "vad.tar.zst";
 /** Where one model's files live. */
@@ -18,10 +16,8 @@ export declare function archiveCache(dataRoot: string, model: ModelDescriptor): 
 export declare function isInstalled(root: string, family: FamilyId): Promise<boolean>;
 /** Shared asset locations resolved for one model. */
 export interface SharedPaths {
-    /** Silero VAD model, when the shared archive is installed. */
+    /** Directory holding the voice-activity detectors, when the shared archive is installed. */
     readonly vad: string | undefined;
-    /** FireRedPunc directory, when the shared archive is installed. */
-    readonly punctuation: string | undefined;
 }
 /**
  * Check the shared archive independently of any model.
@@ -37,8 +33,32 @@ export interface PrepareInput {
     readonly manifest: AssetManifest;
     readonly signal: AbortSignal;
     readonly progressIntervalMs: number;
+    /** Parallel range requests for a large archive. */
+    readonly segments?: number | undefined;
     readonly onProgress?: ((progress: DownloadProgress) => void) | undefined;
 }
+/**
+ * Concatenate the slices of one archive and verify the result.
+ *
+ * The digest covers the whole archive, so a slice that was silently truncated or swapped is caught
+ * here rather than by the extractor minutes later.
+ * @param slices - parts in publication order.
+ * @param destination - file to write.
+ * @param record - expected digest and length of the whole archive.
+ * @throws when the joined file does not match; nothing is left behind in that case.
+ */
+export declare function joinParts(slices: readonly string[], destination: string, record: AssetRecord): Promise<void>;
+/**
+ * Fetch one archive into the cache, reassembling it when the manifest publishes it in parts.
+ *
+ * Each slice is verified before it is joined, and the joined file is verified again: a host that
+ * silently truncates an upload is otherwise installed as a corrupt archive.
+ * @param input - locations, manifest and cancellation.
+ * @param archive - archive file name.
+ * @param record - its published digest and, when split, its slices.
+ * @returns the cached archive path.
+ */
+export declare function fetchArchive(input: Omit<PrepareInput, 'model'>, archive: string, record: AssetRecord): Promise<string>;
 /**
  * Make a model available on disk.
  *
@@ -50,9 +70,6 @@ export interface PrepareInput {
 export declare function ensureModel(input: PrepareInput): Promise<string>;
 /**
  * Make the shared archives available.
- *
- * Punctuation is needed by exactly one model, the VAD by all of them, and they ship separately so
- * replacing a detector does not force a re-download of the 248 MB punctuation archive.
  * @param input - locations, manifest and cancellation.
  * @returns the resolved shared paths; an entry stays undefined when its archive is not published.
  */

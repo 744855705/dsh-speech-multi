@@ -18,13 +18,9 @@ describe('family strategies', () => {
     }
   })
 
-  it('drives X-ASR with greedy search and sizes the Qwen3 budget from the window', () => {
-    expect(strategyFor('xasr').engine({ root: '/x' }, { threads: 1, audioSeconds: 38, hotwords: [] }).options).toEqual({ decodingMethod: 'greedy_search', maxActivePaths: 4 })
-    const short = strategyFor('qwen3').engine({ root: '/q' }, { threads: 1, audioSeconds: 10, hotwords: [] })
-    const long = strategyFor('qwen3').engine({ root: '/q' }, { threads: 1, audioSeconds: 100, hotwords: [] })
-    const budget = (spec: { modelConfig: Record<string, unknown> }): number =>
-      ((spec.modelConfig.qwen3Asr as { maxTotalLen: number }).maxTotalLen)
-    expect(budget(long)).toBeGreaterThan(budget(short))
+  it('drives X-ASR with greedy search when no phrases are supplied', () => {
+    expect(strategyFor('xasr').engine({ root: '/x' }, { threads: 1, audioSeconds: 38, hotwords: [] }).options)
+      .toEqual({ decodingMethod: 'greedy_search', maxActivePaths: 4 })
   })
 })
 
@@ -37,11 +33,9 @@ describe('hotwords', () => {
     expect(spec.modelConfig.modelingUnit).toBe('cjkchar')
   })
 
-  it('passes the prompt to Fun-ASR and nothing to a model that cannot bias', () => {
+  it('passes the prompt to Fun-ASR as a single joined string', () => {
     const funasr = strategyFor('funasr').engine({ root: '/f' }, { threads: 1, audioSeconds: 20, hotwords: ['commit', '索引'] })
     expect((funasr.modelConfig.funasrNano as Record<string, unknown>).hotwords).toBe('commit、索引')
-    const qwen = strategyFor('qwen3').engine({ root: '/q' }, { threads: 1, audioSeconds: 30, hotwords: ['commit'] })
-    expect(JSON.stringify(qwen.modelConfig)).not.toContain('commit')
   })
 })
 

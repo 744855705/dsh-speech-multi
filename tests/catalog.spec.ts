@@ -3,14 +3,14 @@ import { DEFAULT_MODEL_ID, MODELS, findModel, modelIds, modelsByPriority } from 
 import { loadManifest } from '../src/runtime/assets.ts'
 
 describe('catalog', () => {
-  it('ranks the four models in the measured order, best first', () => {
-    expect(modelIds()).toEqual(['multi-xasr', 'multi-funasr', 'multi-qwen3', 'multi-firered'])
+  it('ranks the remaining models in the measured order, best first', () => {
+    expect(modelIds()).toEqual(['multi-xasr', 'multi-funasr'])
   })
 
   it('gives every model a distinct priority', () => {
     const priorities = MODELS.map((model) => model.priority)
     expect(new Set(priorities).size).toBe(priorities.length)
-    expect(modelsByPriority().map((model) => model.priority)).toEqual([1, 2, 3, 4])
+    expect(modelsByPriority().map((model) => model.priority)).toEqual([1, 2])
   })
 
   it('defaults to the best ranked model', () => {
@@ -26,9 +26,9 @@ describe('catalog', () => {
     }
   })
 
-  it('only marks the model without native punctuation as needing it', () => {
+  it('marks no remaining model as needing an external punctuation pass', () => {
     const external = MODELS.filter((model) => model.punctuation === 'external')
-    expect(external.map((model) => model.id)).toEqual(['multi-firered'])
+    expect(external).toEqual([])
   })
 
   it('accepts the automatic language hint the speech service defaults to', () => {

@@ -4,6 +4,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import z from '@deepseek-ai/schemastery'
 import { modelIds, type ModelId } from './catalog.ts'
 import { MAX_TIMER_DELAY_MS } from './deadline.ts'
+import type { GpuBackend } from './gpu/backend.ts'
 
 /** Release that serves the archives listed in `runtime/assets.json`. */
 export const DEFAULT_RELEASE_BASE_URL = 'https://github.com/744855705/dsh-speech-multi/releases/download/models-v1'
@@ -63,8 +64,6 @@ export interface Config {
   deviceTier: DeviceTierChoice
   /** CPU intra-operation threads handed to every worker. */
   threads: number
-  /** Add punctuation for models that do not emit it themselves. */
-  punctuation: boolean
   /** Silero speech probability threshold. */
   /** Extra hotwords appended to the built-in list. */
   hotwords: string[]
@@ -99,6 +98,21 @@ export interface Config {
   maxResponseBytes: number
   /** Minimum interval between download progress updates. */
   progressIntervalMs: number
+  /** Parallel range requests for a large archive; 1 downloads in a single stream. */
+  downloadSegments: number
+  /** Registers the GPU providers when a usable device is found. */
+  gpuEnabled: boolean
+  /**
+   * Directory that already holds the GGUF files, checked before anything is downloaded.
+   *
+   * This is how a machine reuses a model set it obtained by other means, and how the plugin is
+   * tested before a release exists.
+   */
+  gpuLocalRoot?: string | undefined
+  /** An already-built `llama-mtmd-cli`; setting it skips compiling the runtime. */
+  gpuBinary?: string | undefined
+  /** Forces one GPU backend instead of probing in preference order. */
+  gpuBackend?: GpuBackend | undefined
 }
 
 const DEFAULT_MODELS: string[] = [...modelIds()]
@@ -111,7 +125,6 @@ export const Config: z<Partial<Config>, Config> = z.object({
   lockFile: z.string().min(1).default(defaultLockFile()),
   deviceTier: z.union([z.const('auto'), z.const('light'), z.const('standard'), z.const('large')]).default('auto'),
   threads: z.natural().min(1).default(8),
-  punctuation: z.boolean().default(true),
   /** Extra hotwords appended to the built-in developer vocabulary. */
   hotwords: z.array(z.string().min(1)).default([]),
   /** Turns the whole hotword list off, keeping the configuration intact. */
@@ -135,6 +148,11 @@ export const Config: z<Partial<Config>, Config> = z.object({
   maxLogBytes: z.natural().min(1).default(64 * 1024),
   maxResponseBytes: z.natural().min(1).default(256 * 1024),
   progressIntervalMs: z.natural().min(1).max(MAX_TIMER_DELAY_MS).default(150),
+  downloadSegments: z.natural().min(1).max(16).default(8),
+  gpuEnabled: z.boolean().default(true),
+  gpuLocalRoot: z.union([z.string().min(1), z.const(undefined)]),
+  gpuBinary: z.union([z.string().min(1), z.const(undefined)]),
+  gpuBackend: z.union([z.const('hip'), z.const('cuda'), z.const('vulkan'), z.const(undefined)]),
 })
 
 /**

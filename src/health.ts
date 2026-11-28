@@ -39,6 +39,20 @@ const CONTROL_TOKEN = /<(?:sil|unk|blank|pad|s|noise|noise[_-]?token)>/giu
 /** A decoder that leaked the word `language` produced no real transcript. */
 const LEAKED_WORD = /\blanguage\b/iu
 
+/**
+ * Qwen3 prefixes a block with `language <Name><asr_text>` when the block starts without context.
+ *
+ * The marker is ordinary generated text, not a vocabulary token, so it survives as-is and used to
+ * trip {@link LEAKED_WORD}: one such block failed the whole recording. Stripping the prefix before
+ * that check keeps the transcript while still catching a decoder that leaks a bare `language`.
+ */
+// Blocks are joined without a separator, so the marker often follows text directly; the
+// lookbehind keeps a preceding letter from turning it into a different word.
+const QWEN_LANGUAGE_PREFIX = /(?<![A-Za-z])language\s+[A-Za-z][A-Za-z ]*?\s*<(?:asr_text|asr)>/giu
+
+/** The schema marker on its own, once the prefix has been consumed. */
+const QWEN_SCHEMA_MARKER = /<(?:asr_text|asr)>/giu
+
 /** Below this much detected speech, a short or empty result is normal. */
 const MIN_JUDGED_SECONDS = 3
 
@@ -57,7 +71,12 @@ const REPEAT_LIMIT = 3
  * @returns the transcript with markers stripped.
  */
 export function sanitize(text: string): string {
-  return text.replace(CONTROL_TOKEN, ' ').replace(/[ \t]{2,}/gu, ' ').trim()
+  return text
+    .replace(QWEN_LANGUAGE_PREFIX, ' ')
+    .replace(QWEN_SCHEMA_MARKER, ' ')
+    .replace(CONTROL_TOKEN, ' ')
+    .replace(/[ \t]{2,}/gu, ' ')
+    .trim()
 }
 
 /**

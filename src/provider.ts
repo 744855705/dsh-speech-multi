@@ -43,17 +43,14 @@ const replySchema = z.object({
 /**
  * Where the shared assets sit once installed.
  *
- * Both are directories: the worker picks the detector inside `vad/` and reads the punctuation
- * model from the other. This must mirror what {@link ensureShared} returns, or a cached install
- * points the worker at a path that does not exist and silently degrades to energy detection.
+ * The path is a directory: the worker picks the detector inside it. This must mirror what
+ * {@link ensureShared} returns, or a cached install points the worker at a path that does not
+ * exist and silently degrades to energy detection.
  * @param dataRoot - model root.
- * @returns the VAD and punctuation directories.
+ * @returns the VAD directory.
  */
 function sharedPaths(dataRoot: string): SharedPaths {
-  return {
-    vad: join(dataRoot, 'vad'),
-    punctuation: join(dataRoot, 'punctuation', 'fireredpunc'),
-  }
+  return { vad: join(dataRoot, 'vad') }
 }
 
 /** Facts shared by every provider of one plugin instance. */
@@ -102,7 +99,7 @@ export class ModelProvider implements SpeechPreparation {
   private readonly lifetime = new AbortController()
   private idle: ReturnType<typeof setTimeout> | undefined
   private root: string | undefined
-  private assets: SharedPaths = { vad: undefined, punctuation: undefined }
+  private assets: SharedPaths = { vad: undefined }
   private state: SpeechPreparationState
   private readonly listeners = new Set<() => void>()
   private preparing: { abort: AbortController; settled: Promise<void>; completed: boolean } | undefined
@@ -174,6 +171,7 @@ export class ModelProvider implements SpeechPreparation {
       manifest: this.shared.manifest,
       signal,
       progressIntervalMs: this.config.progressIntervalMs,
+      segments: this.config.downloadSegments,
       onProgress,
     }
     const root = await ensureModel({ ...common, model: this.model })
@@ -195,7 +193,7 @@ export class ModelProvider implements SpeechPreparation {
       signal.throwIfAborted()
       if (!installed) {
         this.root = undefined
-        this.assets = { vad: undefined, punctuation: undefined }
+        this.assets = { vad: undefined }
         this.publish({
           phase: 'unprepared',
           steps: (this.state.steps ?? []).map(({ kind }) => ({ kind, status: kind === 'check' ? 'complete' : 'pending' })),
@@ -205,7 +203,7 @@ export class ModelProvider implements SpeechPreparation {
       this.root = root
       this.assets = (await isSharedInstalled(this.config.dataRoot))
         ? sharedPaths(this.config.dataRoot)
-        : { vad: undefined, punctuation: undefined }
+        : { vad: undefined }
       this.publish({
         phase: 'standby',
         steps: (this.state.steps ?? []).map(({ kind }) => ({ kind, status: kind === 'load' ? 'pending' : 'complete' })),
@@ -299,13 +297,14 @@ export class ModelProvider implements SpeechPreparation {
         manifest: this.shared.manifest,
         signal,
         progressIntervalMs: this.config.progressIntervalMs,
+      segments: this.config.downloadSegments,
         onProgress: () => {},
       })
     } catch (error) {
       // A missing or unreachable shared archive must not stop transcription: the worker falls
-      // back to energy detection and the one model without punctuation returns plain text.
+      // back to energy detection.
       this.ctx.logger.warn(`speech-multi could not prepare shared assets: ${String(error)}`)
-      return { vad: undefined, punctuation: undefined }
+      return { vad: undefined }
     }
   }
 
@@ -366,12 +365,6 @@ export class ModelProvider implements SpeechPreparation {
           chunking: this.model.chunking,
           ...this.assets.vad === undefined ? {} : { vadDirectory: this.assets.vad },
           ...this.wantsHotwords() ? { hotwords: mergeHotwords(this.config.hotwords) } : {},
-          // Only a decoder that never punctuates gets a second pass. A model that emits its own
-          // marks is left alone: re-punctuating it either doubles marks or, on text it chose not
-          // to punctuate, invents them.
-          ...this.assets.punctuation === undefined || !this.config.punctuation
-            || this.model.punctuation !== 'external'
-            ? {} : { punctuationDirectory: this.assets.punctuation },
           detection: {
             threshold: this.config.vadThreshold,
             minSilenceSeconds: this.config.minSilenceSeconds,

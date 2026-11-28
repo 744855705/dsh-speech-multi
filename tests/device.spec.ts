@@ -25,21 +25,20 @@ describe('tierPolicy', () => {
     expect(tierPolicy('large').maxRecordingSeconds).toBe(300)
   })
 
-  it('adds Qwen3 before FireRed, because it peaks lower at this ceiling', () => {
-    expect(tierPolicy('light').models).toEqual(['multi-xasr', 'multi-funasr'])
-    expect(tierPolicy('standard').models).toEqual(['multi-xasr', 'multi-funasr', 'multi-qwen3'])
-    expect(tierPolicy('large').models).toHaveLength(4)
-    expect(tierPolicy('large').models).toContain('multi-firered')
+  it('offers the same two decoders on every tier, which differ only by ceiling', () => {
+    for (const tier of ['light', 'standard', 'large'] as const) {
+      expect(tierPolicy(tier).models).toEqual(['multi-xasr', 'multi-funasr'])
+    }
   })
 })
 
 describe('availableModels', () => {
-  it('keeps requested order and drops what the tier cannot run', () => {
-    expect(availableModels(['multi-firered', 'multi-xasr'], 'standard')).toEqual(['multi-xasr'])
-    expect(availableModels(['multi-qwen3', 'multi-xasr'], 'standard')).toEqual(['multi-qwen3', 'multi-xasr'])
+  it('keeps requested order and drops unknown ids', () => {
+    expect(availableModels(['multi-funasr', 'multi-xasr'], 'standard')).toEqual(['multi-funasr', 'multi-xasr'])
+    expect(availableModels(['multi-ghost', 'multi-xasr'], 'light')).toEqual(['multi-xasr'])
   })
 
   it('falls back to the tier leader when nothing requested fits', () => {
-    expect(availableModels(['multi-qwen3'], 'light')).toEqual(['multi-xasr'])
+    expect(availableModels(['multi-ghost'], 'light')).toEqual(['multi-xasr'])
   })
 })

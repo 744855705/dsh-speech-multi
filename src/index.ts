@@ -14,7 +14,10 @@ import { Config, enabledModelIds, validateConfig } from './config.ts'
 import { availableModels, classifyDevice, tierPolicy, type DeviceTier } from './device.ts'
 import { installLock, readLock } from './lock.ts'
 import { ModelProvider, providerInfo, type SharedRuntime } from './provider.ts'
-import { loadManifest } from './runtime/assets.ts'
+import { detectGpu } from './gpu/backend.ts'
+import { GpuProvider, gpuProviderInfo } from './gpu/provider.ts'
+import { runnableGpuModels } from './gpu/spec.ts'
+import { loadManifest, type AssetManifest } from './runtime/assets.ts'
 
 export { Config } from './config.ts'
 export const name = 'dsh-speech-multi'
@@ -51,8 +54,15 @@ export function apply(ctx: Context, config: Config): void {
     const model: ModelDescriptor | undefined = findModel(id)
     return model === undefined ? [] : [new ModelProvider(ctx, config, model, shared)]
   })
+  const gpu = enabledGpuProviders(ctx, config, manifest)
   const lock = readLock(config.lockFile, ctx.logger, runnable)
   ctx.effect(() => {
+    const gpuRegistrations = gpu.map((provider) => ctx.speechToText.register({
+      info: gpuProviderInfo(provider.spec),
+      preparation: provider,
+      transcribe: async (input, signal) => await provider.transcribe(input, signal),
+    }))
+    for (const provider of gpu) provider.inspect()
     const unregisters = providers.map((provider) => ctx.speechToText.register({
       info: providerInfo(provider.model),
       preparation: provider,
@@ -68,9 +78,33 @@ export function apply(ctx: Context, config: Config): void {
     }, lock)
     return async () => {
       releaseLock()
-      const removals = unregisters.map((unregister) => unregister())
+      const removals = [...gpuRegistrations, ...unregisters].map((unregister) => unregister())
       await Promise.all(providers.map(async (provider) => await provider.dispose()))
       await Promise.all(removals)
     }
   })
+}
+
+/**
+ * Register the GPU providers this machine can run.
+ *
+ * A provider only appears when a backend is installed and the device has room for the model, so a
+ * machine without a usable GPU simply never sees them. Registration is skipped entirely when the
+ * feature is turned off, which also keeps the compilation step from ever running.
+ * @param ctx - host registry and logger.
+ * @param config - validated configuration.
+ * @param manifest - published assets.
+ * @returns one provider per runnable model, largest first.
+ */
+function enabledGpuProviders(ctx: Context, config: Config, manifest: AssetManifest): GpuProvider[] {
+  if (!config.gpuEnabled) return []
+  const device = detectGpu(config.gpuBackend)
+  if (device === undefined) return []
+  const runnable = runnableGpuModels(device.vramBytes)
+  if (runnable.length === 0) {
+    ctx.logger.warn(`speech-multi found ${device.name} with ${(device.vramBytes / 1e9).toFixed(1)} GB, too small for any GPU model`)
+    return []
+  }
+  ctx.logger.info(`speech-multi gpu: ${device.name} via ${device.backend}, ${(device.vramBytes / 1e9).toFixed(1)} GB, ${runnable.length} model(s) offered`)
+  return runnable.map((spec) => new GpuProvider(ctx, config, spec, device, manifest))
 }

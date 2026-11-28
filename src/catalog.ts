@@ -5,12 +5,18 @@
  */
 
 /** Registered provider ids; consumers select one of these exact ids. */
-export type ModelId = 'multi-xasr' | 'multi-funasr' | 'multi-qwen3' | 'multi-firered'
+export type ModelId = 'multi-xasr' | 'multi-funasr'
 
 /** Recognizer family; selects the strategy that builds the sherpa-onnx configuration. */
-export type FamilyId = 'xasr' | 'funasr' | 'qwen3' | 'firered'
+export type FamilyId = 'xasr' | 'funasr'
 
-/** Where a model's punctuation comes from: the decoder itself, or the shared punctuation model. */
+/**
+ * Where a model's punctuation comes from.
+ *
+ * Descriptive only: every remaining decoder punctuates itself, and the second-pass wiring was
+ * removed with the model that needed it. `external` stays in the union so a future decoder that
+ * needs the pass can declare it without reshaping the descriptor.
+ */
 export type PunctuationSource = 'builtin' | 'external'
 
 /**
@@ -79,32 +85,6 @@ export const MODELS: readonly ModelDescriptor[] = [
     recommendedDiskBytes: 1_000_000_000,
     archive: 'funasr-nano-1024-int8.tar.zst',
     root: 'funasr-nano-1024',
-  },
-  {
-    id: 'multi-qwen3',
-    family: 'qwen3',
-    displayName: 'Qwen3-ASR 0.6B (int8)',
-    languages: ['auto', 'zh', 'en'],
-    priority: 3,
-    chunking: { blockSeconds: 14, minBlockSeconds: 8, hardCapSeconds: 60 },
-    punctuation: 'builtin',
-    expectedMemoryBytes: 6_400_000_000,
-    recommendedDiskBytes: 960_000_000,
-    archive: 'qwen3-asr-0.6b-int8.tar.zst',
-    root: 'sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25',
-  },
-  {
-    id: 'multi-firered',
-    family: 'firered',
-    displayName: 'FireRedASR2-AED (int8)',
-    languages: ['auto', 'zh', 'en'],
-    priority: 4,
-    chunking: { blockSeconds: 26, minBlockSeconds: 8, hardCapSeconds: 55 },
-    punctuation: 'external',
-    expectedMemoryBytes: 3_300_000_000,
-    recommendedDiskBytes: 1_300_000_000,
-    archive: 'firered-asr2-aed-int8.tar.zst',
-    root: 'firered-aed',
   },
 ]
 

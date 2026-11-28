@@ -20,6 +20,24 @@ export interface WorkerReply {
 export type WorkerHandler = (audio: Buffer) => WorkerReply | Promise<WorkerReply>
 
 /**
+ * Lowest port the worker accepts.
+ *
+ * Everyday services cluster far below this: 3000, 5173, 5432, 6379, 8000, 8080, 8888, 9000, and
+ * transient clients usually draw from the 20 000s as well. Starting the worker above 30 000 keeps it
+ * clear of both bands, which costs nothing because the kernel still chooses the exact port.
+ */
+const MIN_WORKER_PORT = 30_000
+
+/**
+ * Times to ask the kernel for a port before giving up.
+ *
+ * The bind asks for port 0, so the kernel answers with a free one and a collision cannot happen.
+ * The retry exists for the other case: a system whose ephemeral range starts below
+ * {@link MIN_WORKER_PORT} would otherwise leave the worker holding a port in the crowded band.
+ */
+const MAX_PORT_ATTEMPTS = 8
+
+/**
  * Start the loopback listener.
  * @param token - per-process bearer secret.
  * @param maxAudioBytes - largest accepted request body.
@@ -63,14 +81,53 @@ export async function startServer(token: string, maxAudioBytes: number, handle: 
       }
     })()
   })
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      server.off('error', reject)
-      resolve()
+  const port = await bindAbove(server, MIN_WORKER_PORT)
+  return { server, port }
+}
+
+/**
+ * Bind the server to a free loopback port above a floor.
+ *
+ * Port 0 hands the choice to the kernel, which is the only way to be certain the port is free at
+ * the moment of binding. If the kernel answers with something inside the crowded band, the socket is
+ * released and the request is repeated, so the result is both free and out of the way.
+ * @param server - the listener to bind.
+ * @param floor - lowest acceptable port.
+ * @returns the bound port.
+ * @throws when no acceptable port could be obtained.
+ */
+async function bindAbove(server: Server, floor: number): Promise<number> {
+  for (let attempt = 1; attempt <= MAX_PORT_ATTEMPTS; attempt += 1) {
+    await new Promise<void>((resolve, reject) => {
+      const failed = (error: Error): void => {
+        server.off('listening', listening)
+        server.off('error', failed)
+        reject(error)
+      }
+      const listening = (): void => {
+        server.off('error', failed)
+        server.off('listening', listening)
+        resolve()
+      }
+      server.once('error', failed)
+      server.once('listening', listening)
+      server.listen(0, '127.0.0.1')
+    }).catch((error: unknown) => {
+      // A port that was taken between the kernel's answer and the bind is retried, not surfaced.
+      if (attempt === MAX_PORT_ATTEMPTS) throw error
     })
-  })
-  const address = server.address()
-  if (address === null || typeof address === 'string') throw new Error('speech-multi worker could not bind a loopback port')
-  return { server, port: address.port }
+    if (!server.listening) continue
+    const address = server.address()
+    if (address === null || typeof address === 'string') {
+      server.close()
+      throw new Error('speech-multi worker could not bind a loopback port')
+    }
+    if (address.port >= floor) return address.port
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        resolve()
+      })
+    })
+  }
+  throw new Error(`speech-multi worker could not obtain a loopback port at or above ${floor}`)
 }

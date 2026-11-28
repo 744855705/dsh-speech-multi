@@ -39,8 +39,8 @@ describe('parseLock', () => {
   })
 
   it('forces the target into a whitelist that omits it', () => {
-    const lock = parseLock({ schema: 2, mode: 'hard', modelId: 'multi-qwen3', allow: ['multi-xasr'] }, ALL)
-    expect(lock?.allow).toEqual(['multi-qwen3', 'multi-xasr'])
+    const lock = parseLock({ schema: 2, mode: 'hard', modelId: 'multi-funasr', allow: ['multi-xasr'] }, ALL)
+    expect(lock?.allow).toEqual(['multi-funasr', 'multi-xasr'])
   })
 
   it('drops ids the catalog does not know', () => {

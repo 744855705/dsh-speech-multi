@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "files": {
     "xasr-zh-en-punct-int8.tar.zst": {
       "sha256": "a98ed06245240c4cca63e17f5f53d9f9c80f418369b083a3dbd8e0dcb44eb964",
@@ -9,21 +9,58 @@
       "sha256": "8f47b0e7000d2caef4e33d2e64664b2bfddedce324d749549ea8f6f3a4d76e80",
       "bytes": 760556827
     },
-    "qwen3-asr-0.6b-int8.tar.zst": {
-      "sha256": "e6d17d34d476f8fad71efdf97dbb30c075f0926054836402c78ce81a18e516d4",
-      "bytes": 839305625
-    },
-    "firered-asr2-aed-int8.tar.zst": {
-      "sha256": "9bd628ad8afc6a1a092417933989076d873805571f608fe63a59a6df29ab5cc6",
-      "bytes": 795379135
-    },
-    "punctuation.tar.zst": {
-      "sha256": "a227a8665902ed34d5811ac9170ff300bdba48794e36a6e080890f59b4ad83ea",
-      "bytes": 248882260
-    },
     "vad.tar.zst": {
       "sha256": "48ddf76b5a12391d55cac1206ed8ab4e575173fe14c67c01dd5b3017ecb28f88",
       "bytes": 3805039
+    },
+    "qwen3-asr-1.7b-bf16.tar.zst": {
+      "sha256": "eb6880e97d0f2903078f4774bc5f8a62ba9625f8a03234c12bb78cb1d5f4442f",
+      "bytes": 3678244432,
+      "release": "models-v2",
+      "parts": [
+        {
+          "name": "qwen3-asr-1.7b-bf16.tar.zst.part1",
+          "sha256": "bdbb0d84434a15449d0f74317b552ae072f3c14b7c7fd28c0d6e33cf4e572b17",
+          "bytes": 1887436800
+        },
+        {
+          "name": "qwen3-asr-1.7b-bf16.tar.zst.part2",
+          "sha256": "fe44b54ba8ddd704c236d7c660ebfa0af2b38017edfa0674fa35309dfedfa61d",
+          "bytes": 1790807632
+        }
+      ]
+    },
+    "qwen3-asr-1.7b-q8_0.tar.zst": {
+      "sha256": "10d4257a0d8f17841601dec862b4ac8f70bddf56a1e042407fbb4408d471f692",
+      "bytes": 2404131709,
+      "release": "models-v2",
+      "parts": [
+        {
+          "name": "qwen3-asr-1.7b-q8_0.tar.zst.part1",
+          "sha256": "6c81bdbf5d76635bd8130ef4a4ae2b9554dae640424cf9b7c7be271fd0eb3ca1",
+          "bytes": 1887436800
+        },
+        {
+          "name": "qwen3-asr-1.7b-q8_0.tar.zst.part2",
+          "sha256": "1399cca38d7e8e2a6edc92279bc14ac08a4a8690d91768d03f7ceff6d5f5249f",
+          "bytes": 516694909
+        }
+      ]
+    },
+    "qwen3-asr-06b-bf16.tar.zst": {
+      "sha256": "68dcc1089c5695551faeb2a19272d35c04c7863a20f00e2252936b2d07a18163",
+      "bytes": 1470796801,
+      "release": "models-v2"
+    },
+    "qwen3-asr-06b-q8_0.tar.zst": {
+      "sha256": "1238fa26ce6c01fed9ba5a3118e2b9687f37438906da312526f809938466768c",
+      "bytes": 966435062,
+      "release": "models-v2"
+    },
+    "llama.cpp-1.1.0.zip": {
+      "sha256": "7edf799071d399e9c42b96b08d1f9d2fcb82e0413aba137a445206134f6238dc",
+      "bytes": 42247295,
+      "release": "models-v2"
     }
   }
 }

@@ -12,7 +12,6 @@ import { z } from 'zod'
 import type { ChunkingPolicy, FamilyId } from '../catalog.ts'
 import { strategyFor } from '../models/index.ts'
 import { phrasesFor } from '../hotwords.ts'
-import { punctuateOrKeep } from '../punctuation/fireredpunc.ts'
 import { decodeWave } from '../runtime/wav.ts'
 import { decodeRecording } from './decode.ts'
 import { detectRegions } from './detect.ts'
@@ -38,12 +37,6 @@ const payloadSchema = z.object({
   hotwords: z.array(z.string().min(1)).optional(),
   /** Directory holding fsmn.onnx, vad.mvn, firered.onnx and cmvn.json. */
   vadDirectory: z.string().min(1).optional(),
-  /**
-   * FireRedPunc directory. The Host only sends it for a decoder that never punctuates on its own:
-   * a model with its own punctuation is trusted to handle it, because a second pass over text it
-   * already decided about produces marks nobody asked for.
-   */
-  punctuationDirectory: z.string().min(1).optional(),
   detection: z.object({
     threshold: z.number().min(0).max(1),
     minSilenceSeconds: z.number().nonnegative(),
@@ -90,7 +83,6 @@ async function main(): Promise<void> {
     ...payload.detection,
     threads: payload.threads,
   }
-  const punctuationDirectory = payload.punctuationDirectory
 
   const { port } = await startServer(token, payload.maxAudioBytes, async (audio) => {
     const wave = decodeWave(audio)
@@ -104,9 +96,6 @@ async function main(): Promise<void> {
       segments,
       // Only the biasing family passes phrases to the stream; the rest would reject them.
       ...payload.family === 'xasr' && hotwords.length > 0 ? { hotwords: phrasesFor(hotwords) } : {},
-      ...punctuationDirectory === undefined ? {} : {
-        punctuate: async (text: string) => await punctuateOrKeep(punctuationDirectory, text),
-      },
     })
     return {
       text: result.text,
