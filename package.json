@@ -6,7 +6,7 @@
     "dsh": ">=0.2.2-rc.1 <=0.5.0"
   },
   "type": "module",
-  "description": "Four local speech-to-text models with per-model chunking, device tiers, and a soft/hard selection lock.",
+  "description": "Local speech-to-text providers for DSH: two CPU decoders plus Qwen3-ASR on a discrete GPU through a locally built llama.cpp.",
   "license": "Apache-2.0",
   "main": "lib/index.js",
   "exports": {

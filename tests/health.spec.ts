@@ -101,3 +101,25 @@ describe('Qwen3 schema markers', () => {
     expect(sanitize('我们讨论 language 这个单词')).toBe('我们讨论 language 这个单词')
   })
 })
+
+describe('short utterance marks', () => {
+  it('drops the ending mark of a short fragment in any script', () => {
+    // The set is Unicode punctuation, not a hand-written list, so a model that answers "Done!"
+    // behaves the same as one that answers "好的。".
+    expect(trimShortTrailingMarks('好的。')).toBe('好的')
+    expect(trimShortTrailingMarks('OK.')).toBe('OK')
+    expect(trimShortTrailingMarks('Done!')).toBe('Done')
+    expect(trimShortTrailingMarks('Hello?')).toBe('Hello')
+    expect(trimShortTrailingMarks('你好……')).toBe('你好')
+    expect(trimShortTrailingMarks('没问题？')).toBe('没问题')
+  })
+
+  it('leaves a fragment alone when it ends in a word', () => {
+    expect(trimShortTrailingMarks('测试')).toBe('测试')
+    expect(trimShortTrailingMarks('行')).toBe('行')
+  })
+
+  it('leaves anything longer than five characters untouched', () => {
+    expect(trimShortTrailingMarks('我这边在排查一个线上的问题。')).toBe('我这边在排查一个线上的问题。')
+  })
+})

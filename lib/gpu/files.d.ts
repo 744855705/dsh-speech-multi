@@ -1,5 +1,6 @@
 import type { Config } from '../config.ts';
 import { type AssetManifest } from '../runtime/assets.ts';
+import type { DownloadProgress } from '../runtime/download.ts';
 import type { GpuModelSpec } from './spec.ts';
 /** The two files one GPU model needs. */
 export interface GpuFilePaths {
@@ -14,6 +15,8 @@ export interface GpuFilesInput {
     readonly config: Config;
     readonly manifest: AssetManifest;
     readonly signal: AbortSignal;
+    /** Reports bytes as the archive arrives, so the settings page can show real progress. */
+    readonly onProgress?: ((progress: DownloadProgress) => void) | undefined;
 }
 /** Where one GPU model is installed. */
 export declare function gpuModelRoot(config: Config, spec: GpuModelSpec): string;

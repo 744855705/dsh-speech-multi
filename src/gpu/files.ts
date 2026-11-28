@@ -9,6 +9,7 @@ import { access, mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Config } from '../config.ts'
 import { assetFor, type AssetManifest } from '../runtime/assets.ts'
+import type { DownloadProgress } from '../runtime/download.ts'
 import { fetchArchive } from '../runtime/prepare.ts'
 import { extractTarZst } from '../runtime/tar.ts'
 import type { GpuModelSpec } from './spec.ts'
@@ -41,6 +42,8 @@ export interface GpuFilesInput {
   readonly config: Config
   readonly manifest: AssetManifest
   readonly signal: AbortSignal
+  /** Reports bytes as the archive arrives, so the settings page can show real progress. */
+  readonly onProgress?: ((progress: DownloadProgress) => void) | undefined
 }
 
 /** Where one GPU model is installed. */
@@ -74,6 +77,7 @@ export async function resolveGpuFiles(input: GpuFilesInput): Promise<GpuFilePath
     signal: input.signal,
     progressIntervalMs: input.config.progressIntervalMs,
     segments: input.config.downloadSegments,
+    ...input.onProgress === undefined ? {} : { onProgress: input.onProgress },
   }, input.spec.archive, record)
   await rm(root, { recursive: true, force: true })
   await mkdir(root, { recursive: true })

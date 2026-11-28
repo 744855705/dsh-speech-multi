@@ -1,5 +1,5 @@
 /** Deployment configuration for the four local recognizers. */
-import { homedir } from 'node:os'
+import { cpus, homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import z from '@deepseek-ai/schemastery'
 import { modelIds, type ModelId } from './catalog.ts'
@@ -100,6 +100,13 @@ export interface Config {
   progressIntervalMs: number
   /** Parallel range requests for a large archive; 1 downloads in a single stream. */
   downloadSegments: number
+  /**
+   * Compiler processes used to build the GPU runtime.
+   *
+   * A HIP build keeps the machine busy for several minutes; using every core finishes it sooner,
+   * and the build is a one-off rather than something that runs while the user is typing.
+   */
+  buildJobs: number
   /** Registers the GPU providers when a usable device is found. */
   gpuEnabled: boolean
   /**
@@ -149,6 +156,7 @@ export const Config: z<Partial<Config>, Config> = z.object({
   maxResponseBytes: z.natural().min(1).default(256 * 1024),
   progressIntervalMs: z.natural().min(1).max(MAX_TIMER_DELAY_MS).default(150),
   downloadSegments: z.natural().min(1).max(16).default(8),
+  buildJobs: z.natural().min(1).max(64).default(cpus().length),
   gpuEnabled: z.boolean().default(true),
   gpuLocalRoot: z.union([z.string().min(1), z.const(undefined)]),
   gpuBinary: z.union([z.string().min(1), z.const(undefined)]),

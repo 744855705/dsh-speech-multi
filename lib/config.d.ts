@@ -76,6 +76,13 @@ export interface Config {
     progressIntervalMs: number;
     /** Parallel range requests for a large archive; 1 downloads in a single stream. */
     downloadSegments: number;
+    /**
+     * Compiler processes used to build the GPU runtime.
+     *
+     * A HIP build keeps the machine busy for several minutes; using every core finishes it sooner,
+     * and the build is a one-off rather than something that runs while the user is typing.
+     */
+    buildJobs: number;
     /** Registers the GPU providers when a usable device is found. */
     gpuEnabled: boolean;
     /**

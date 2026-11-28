@@ -11,6 +11,22 @@ import type { Config } from '../config.ts';
 import type { GpuDevice } from './backend.ts';
 import type { GpuModelSpec } from './spec.ts';
 import type { AssetManifest } from '../runtime/assets.ts';
+/**
+ * Turn the two concurrent jobs into one preparation state.
+ *
+ * The page has a single progress line, so the download owns it whenever bytes are moving; the build
+ * only takes over once nothing is left to download. Publishing the build first would mark the model
+ * step complete before the model had been fetched, which reads as "loaded" while the download has
+ * not started.
+ * @param download - the transfer in flight, if any.
+ * @param buildStartedAt - when the build began, for the spinner.
+ * @returns the state to publish.
+ */
+export declare function progressState(download: {
+    readonly resource: string;
+    readonly completedBytes: number;
+    readonly totalBytes?: number | undefined;
+} | undefined, buildStartedAt: number): SpeechPreparationState;
 /** Info the settings page renders for one GPU model. */
 export declare function gpuProviderInfo(spec: GpuModelSpec): SpeechProviderInfo;
 /** One GPU-backed recognizer. */
@@ -24,6 +40,10 @@ export declare class GpuProvider implements SpeechPreparation {
     private readonly listeners;
     private binary;
     private files;
+    /** Download in flight, so the page can show bytes while the build runs beside it. */
+    private download;
+    /** When the current build phase started, for the spinning indicator. */
+    private buildStartedAt;
     private running;
     constructor(ctx: Context, config: Config, spec: GpuModelSpec, device: GpuDevice, manifest: AssetManifest);
     /** @returns the current Host-owned preparation state. */
@@ -56,7 +76,18 @@ export declare class GpuProvider implements SpeechPreparation {
      * Run the whole preparation task.
      * @param signal - cancellation.
      */
+    /**
+     * Build the runtime and fetch the model, both at once.
+     *
+     * The two jobs touch different files and neither needs the other, so running them in sequence
+     * would add the download to the end of a build that already takes minutes. Whatever has byte
+     * progress is what the page shows; when only the build is left it reports a spinning step instead
+     * of a download sitting at zero.
+     * @param signal - cancellation.
+     */
     private install;
+    /** Report whichever job has something to say right now. */
+    private report;
     /**
      * Replace the published state and wake listeners.
      * @param state - the new state; omitted steps are derived from the previous ones.

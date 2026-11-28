@@ -7,7 +7,7 @@
  * one upload rather than a network fetch from a project nobody controls.
  */
 import { spawn } from 'node:child_process'
-import { access, mkdir, readdir, rm } from 'node:fs/promises'
+import { access, constants, mkdir, readdir, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Config } from '../config.ts'
 import { assetFor, type AssetManifest } from '../runtime/assets.ts'
@@ -17,8 +17,31 @@ import type { GpuBackend } from './backend.ts'
 /** Pinned runtime source, published beside the models. */
 export const LLAMA_SOURCE_ARCHIVE = 'llama.cpp-1.1.0.zip'
 
-/** Directory holding the extracted source inside the plugin's data root. */
-const SOURCE_DIR = 'llama.cpp'
+/** Prefix of every directory this module owns inside the data root. */
+const SOURCE_PREFIX = 'llama.cpp-'
+
+/**
+ * Version of the pinned runtime, taken from the archive name.
+ *
+ * It keys the source tree, the build directory and the shared-build lock, so publishing a newer
+ * archive in a later plugin release rebuilds instead of silently reusing the binary built from the
+ * previous one.
+ * @returns the version found in {@link LLAMA_SOURCE_ARCHIVE}.
+ */
+export function llamaVersion(): string {
+  const match = /llama\.cpp-(.+)\.zip$/u.exec(LLAMA_SOURCE_ARCHIVE)
+  if (match?.[1] === undefined) throw new Error(`speech-multi cannot read a version from ${LLAMA_SOURCE_ARCHIVE}`)
+  return match[1]
+}
+
+/**
+ * Directory holding the extracted source for one version.
+ * @param config - plugin configuration.
+ * @returns the absolute path.
+ */
+export function sourceDirectory(config: Config): string {
+  return join(config.dataRoot, 'gpu', `${SOURCE_PREFIX}${llamaVersion()}`)
+}
 
 /** CMake flags per backend. */
 const BACKEND_FLAGS: Readonly<Record<GpuBackend, readonly string[]>> = {
@@ -44,7 +67,17 @@ export interface BuildInput {
  * @returns the absolute path to `llama-mtmd-cli`.
  */
 export function builtBinary(config: Config, backend: GpuBackend): string {
-  return join(config.dataRoot, 'gpu', `build-${backend}`, 'bin', 'llama-mtmd-cli')
+  return join(buildDirectory(config, backend), 'bin', 'llama-mtmd-cli')
+}
+
+/**
+ * Where one version and backend are compiled.
+ * @param config - plugin configuration.
+ * @param backend - backend the build targets.
+ * @returns the absolute path to the CMake binary directory.
+ */
+export function buildDirectory(config: Config, backend: GpuBackend): string {
+  return join(config.dataRoot, 'gpu', `build-${llamaVersion()}-${backend}`)
 }
 
 /**
@@ -52,13 +85,90 @@ export function builtBinary(config: Config, backend: GpuBackend): string {
  * @param path - absolute path.
  * @returns true when the file exists and carries the execute bit.
  */
-async function executable(path: string): Promise<boolean> {
+export async function isUsableBinary(path: string): Promise<boolean> {
   try {
-    await access(path)
-    return true
+    // A build interrupted half way leaves a file behind. Treating mere existence as success would
+    // hand that file to the runtime and fail on every transcription instead of rebuilding once.
+    await access(path, constants.X_OK)
+    const stats = await stat(path)
+    return stats.isFile() && stats.size > 0
   } catch {
     return false
   }
+}
+
+/** One build in progress, shared by every provider that needs it. */
+interface RunningBuild {
+  /** Settles when the build does; assigned once the factory starts. */
+  promise: Promise<string>
+  readonly controller: AbortController
+  /** Callers still interested; the build is abandoned when this reaches zero. */
+  waiters: number
+}
+
+/** Builds already under way, keyed by data root and backend. */
+const RUNNING = new Map<string, RunningBuild>()
+
+/**
+ * Join an in-flight build instead of starting a second one.
+ *
+ * Several GPU providers share one binary, and preparing two models at once must not extract the
+ * source twice or run two compilers over the same build directory. Cancellation is counted rather
+ * than forwarded: a provider that gives up stops waiting, and the build itself is only stopped once
+ * nobody is waiting for it, so cancelling one preparation cannot destroy another's work.
+ * @param key - data root and backend identifying the binary.
+ * @param factory - starts the build; receives the signal that governs its lifetime.
+ * @param signal - the caller's cancellation.
+ * @returns the binary path.
+ */
+export async function sharedBuild(key: string, factory: (signal: AbortSignal) => Promise<string>,
+  signal?: AbortSignal | undefined): Promise<string> {
+  let running = RUNNING.get(key)
+  if (running === undefined) {
+    const controller = new AbortController()
+    const created: RunningBuild = { controller, waiters: 0, promise: Promise.resolve('') }
+    created.promise = factory(controller.signal).finally(() => {
+      RUNNING.delete(key)
+    })
+    RUNNING.set(key, created)
+    running = created
+  }
+  const joined = running
+  joined.waiters += 1
+  let released = false
+  const release = (): void => {
+    if (released) return
+    released = true
+    joined.waiters -= 1
+    if (joined.waiters <= 0 && !joined.controller.signal.aborted) joined.controller.abort()
+  }
+  if (signal === undefined) {
+    try {
+      return await joined.promise
+    } finally {
+      release()
+    }
+  }
+  return await new Promise<string>((resolve, reject) => {
+    const abort = (): void => {
+      release()
+      reject(new Error('speech-multi build cancelled'))
+    }
+    if (signal.aborted) {
+      abort()
+      return
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    joined.promise.then((value) => {
+      signal.removeEventListener('abort', abort)
+      release()
+      resolve(value)
+    }, (error: unknown) => {
+      signal.removeEventListener('abort', abort)
+      release()
+      reject(error)
+    })
+  })
 }
 
 /**
@@ -68,16 +178,26 @@ async function executable(path: string): Promise<boolean> {
  * @throws when the source is missing, the toolchain rejects the build, or cancellation fired.
  */
 export async function ensureLlamaBinary(input: BuildInput): Promise<string> {
+  const key = `${input.config.dataRoot}|${input.backend}|${llamaVersion()}`
+  return await sharedBuild(key, async (signal) => await buildOnce({ ...input, signal }), input.signal)
+}
+
+/**
+ * Perform one build.
+ * @param input - configuration, manifest, backend and cancellation.
+ * @returns the absolute path to `llama-mtmd-cli`.
+ */
+async function buildOnce(input: BuildInput): Promise<string> {
   if (input.config.gpuBinary !== undefined) return input.config.gpuBinary
   const binary = builtBinary(input.config, input.backend)
-  if (await executable(binary)) return binary
+  if (await isUsableBinary(binary)) return binary
   input.signal.throwIfAborted()
 
   const root = join(input.config.dataRoot, 'gpu')
   await mkdir(root, { recursive: true })
   // The archive is cached under the data root, and this path builds before any model has created it.
   await mkdir(join(input.config.dataRoot, '.cache'), { recursive: true })
-  const source = join(root, SOURCE_DIR)
+  const source = sourceDirectory(input.config)
   if (!(await exists(join(source, 'CMakeLists.txt')))) {
     input.onStep?.('download')
     const record = assetFor(input.manifest, LLAMA_SOURCE_ARCHIVE)
@@ -97,7 +217,7 @@ export async function ensureLlamaBinary(input: BuildInput): Promise<string> {
 
   input.signal.throwIfAborted()
   input.onStep?.('compile')
-  const build = join(root, `build-${input.backend}`)
+  const build = buildDirectory(input.config, input.backend)
   await run('cmake', [
     '-S', source,
     '-B', build,
@@ -105,9 +225,34 @@ export async function ensureLlamaBinary(input: BuildInput): Promise<string> {
     '-DLLAMA_CURL=OFF',
     ...BACKEND_FLAGS[input.backend],
   ], input.signal)
-  await run('cmake', ['--build', build, '-j', String(input.config.threads), '--target', 'llama-mtmd-cli'], input.signal)
-  if (!(await executable(binary))) throw new Error(`llama.cpp build finished without producing ${binary}`)
+  await run('cmake', ['--build', build, '-j', String(input.config.buildJobs), '--target', 'llama-mtmd-cli'], input.signal)
+  if (!(await isUsableBinary(binary))) throw new Error(`llama.cpp build finished without producing ${binary}`)
+  await discardOtherVersions(input.config)
   return binary
+}
+
+/**
+ * Remove builds and sources left over from a previous version.
+ *
+ * Each version owns its own directories, so a bump would otherwise leave the previous compiler
+ * output on disk forever. Deletion happens only after the new binary is proven usable, so a failed
+ * upgrade still has the old tree to fall back on.
+ * @param config - plugin configuration.
+ * @returns the entries removed.
+ */
+export async function discardOtherVersions(config: Config): Promise<string[]> {
+  const root = join(config.dataRoot, 'gpu')
+  const keep = new Set([`${SOURCE_PREFIX}${llamaVersion()}`, ...(['hip', 'cuda', 'vulkan'] as const).map((backend) => `build-${llamaVersion()}-${backend}`)])
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => [])
+  const removed: string[] = []
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const owned = entry.name.startsWith(SOURCE_PREFIX) || entry.name.startsWith('build-')
+    if (!owned || keep.has(entry.name)) continue
+    await rm(join(root, entry.name), { recursive: true, force: true })
+    removed.push(entry.name)
+  }
+  return removed
 }
 
 /**

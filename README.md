@@ -1,25 +1,38 @@
 # dsh-speech-multi
 
-Four local speech-to-text models behind one plugin, each decoded in the window it handles best.
-Audio never leaves the machine, and a model is downloaded only when you prepare that model.
+Local speech-to-text providers for DSH. Audio never leaves the machine, and a model is downloaded
+only when you prepare that model.
+
+Two decoders run on the CPU through sherpa-onnx. Four more run on the GPU through a locally built
+llama.cpp, and those appear only on a machine that has a discrete graphics card.
 
 ## Models
 
-Priority is the measured order, best first. The first one is the default selection.
+Each model is its own provider, so an unused model is never downloaded, and each one owns its
+preparation state and idle reclaimer.
 
-| Priority | Provider id | Model | Window | Shortest | Hard cap |
-|---|---|---|---|---|---|
-| 1 | `multi-xasr` | X-ASR zh-en (int8, punctuation) | 34 s | 20 s | 38 s |
-| 2 | `multi-funasr` | Fun-ASR-Nano (int8, 1024 context) | 20 s | 6 s | 30 s |
-| 3 | `multi-qwen3` | Qwen3-ASR 0.6B (int8) | 40 s | 8 s | 100 s |
-| 4 | `multi-firered` | FireRedASR2-AED (int8) | 40 s | 8 s | 55 s |
+### On the CPU
 
-Each model is a separate provider, so an unused model is never downloaded, and each one runs in
-its own worker process with its own preparation state and idle reclaimer.
+| Provider id | Model |
+|---|---|
+| `multi-xasr` | X-ASR zh-en, with its own punctuation |
+| `multi-funasr` | Fun-ASR-Nano |
 
-**Window** is the recording length that measured best, not the largest the model survives.
-**Hard cap** is the length past which output becomes unusable; for X-ASR it terminates the
-process, so the plan is rejected before decoding.
+### On the GPU
+
+| Provider id | Model | Precision |
+|---|---|---|
+| `multi-gpu-qwen3-1.7b-bf16` | Qwen3-ASR 1.7B | BF16 |
+| `multi-gpu-qwen3-1.7b-q8` | Qwen3-ASR 1.7B | Q8_0 |
+| `multi-gpu-qwen3-06b-bf16` | Qwen3-ASR 0.6B | BF16 |
+| `multi-gpu-qwen3-06b-q8` | Qwen3-ASR 0.6B | Q8_0 |
+
+The GPU providers are offered by what the card can hold, and the choice between them is yours:
+every combination that fits is listed rather than auto-selected. Integrated graphics are never
+used, even when their shared memory would appear large enough.
+
+The GPU runtime is compiled on the machine during preparation, from the source pinned beside the
+models. That takes a while once; afterwards every transcription runs against the local build.
 
 ## Install from GitHub
 
@@ -57,13 +70,13 @@ form updates with `git pull` plus a reload.
 
 ### After installing
 
-1. Restart DSH so the four providers are registered.
+1. Restart DSH so the providers are registered.
 2. Pick a recognizer in **Settings → Voice**, for example `multi-xasr`.
 3. Press **Prepare** for that model. It downloads from the release pinned in
    `runtime/assets.json` and verifies every archive against its SHA-256 before using it.
 
-Nothing is downloaded until you prepare a model, so installing all four providers costs no disk
-or bandwidth by itself.
+Nothing is downloaded until you prepare a model, so installing the plugin costs no disk or
+bandwidth by itself. Preparing a GPU model additionally compiles the runtime once.
 
 ### Removing the plugin
 
@@ -91,6 +104,11 @@ plugin in your own profile patch, remember to remove that line when you uninstal
 | `threads` | `8` | CPU threads per worker |
 | `maxRecordingSeconds` | tier default | Overrides the tier ceiling |
 | `idleTimeoutMs` | `14400000` | Four hours before an idle worker is reclaimed |
+| `gpuEnabled` | `true` | Register the GPU providers when a discrete card is found |
+| `gpuLocalRoot` | — | Directory that already holds the GGUF files; checked before any download |
+| `gpuBinary` | — | An already-built `llama-mtmd-cli`; skips compiling the runtime |
+| `gpuBackend` | — | Forces `hip`, `cuda` or `vulkan` instead of probing in preference order |
+| `downloadSegments` | `8` | Parallel range requests for a large archive |
 
 `releaseBaseUrl` must be set to your own release before any download can succeed; the shipped
 value is a placeholder and startup rejects it.
@@ -105,7 +123,7 @@ plugin unlocked rather than failing to start.
   "schema": 2,
   "mode": "hard",
   "modelId": "multi-xasr",
-  "allow": ["multi-xasr", "multi-funasr", "multi-qwen3", "multi-firered"]
+  "allow": ["multi-xasr", "multi-funasr"]
 }
 ```
 
@@ -121,20 +139,18 @@ behaviour with no disk write, so removing the plugin restores whatever was selec
 
 ## Device tiers
 
-| Tier | Memory | Models | Recording ceiling |
-|---|---|---|---|
-| `light` | under 8 GiB | X-ASR, Fun-ASR-Nano | 60 s |
-| `standard` | under 16 GiB | + Qwen3-ASR 0.6B | 120 s |
-| `large` | 16 GiB and above | + FireRedASR2-AED | 300 s |
+The tier decides how long a recording may be. Both CPU decoders stay inside the lightest tier, so
+they are offered everywhere.
 
-The split follows measured peak memory at each ceiling rather than model size: at 60 s Qwen3
-peaks near 3.0 GB and FireRed near 3.5 GB, and at 120 s they are 4.3 GB and 3.6 GB. Qwen3 is
-cheaper where the mid tier lives, so it opens there and FireRed opens on the top tier. The top
-tier keeps a five-minute ceiling because a small model on a large machine is the cheapest way to
-transcribe a long recording.
+| Tier | Memory | Recording ceiling |
+|---|---|---|
+| `light` | under 8 GiB | 60 s |
+| `standard` | under 16 GiB | 120 s |
+| `large` | 16 GiB and above | 300 s |
 
-A model the tier cannot run is skipped with a warning; recordings past the ceiling are rejected
-before decoding instead of exhausting memory.
+Recordings past the ceiling are rejected before decoding rather than exhausting memory. A GPU
+provider is independent of this: it is offered when the card can hold the model, and it accepts
+recordings up to the ceiling it was given.
 
 ## Transcript inspection
 
@@ -175,6 +191,9 @@ measured worse than the greedy decoder it uses without the list, so it stays out
 - Both neural detectors are trained on 16 kHz mono audio. A recording at another rate falls back
   to the energy detector rather than being resampled.
 - The VAD thresholds are fixed in configuration and are not tuned per microphone.
+- The GPU runtime is built with HIP, CUDA or Vulkan depending on what the machine has. Only the
+  HIP path has been exercised end to end.
+- A GPU model answers in one pass and does not consult the hotword list yet.
 
 ## License
 

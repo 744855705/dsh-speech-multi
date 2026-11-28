@@ -17,13 +17,40 @@ import type {
 } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
 import type { Config } from '../config.ts'
 import { decodeWave } from '../runtime/wav.ts'
-import { checkTranscript } from '../health.ts'
+import { checkTranscript, trimShortTrailingMarks } from '../health.ts'
 import { LLAMA_SOURCE_ARCHIVE, ensureLlamaBinary } from './build.ts'
 import type { GpuDevice } from './backend.ts'
 import { resolveGpuFiles, type GpuFilePaths } from './files.ts'
 import { transcribeWithLlama } from './run.ts'
 import type { GpuModelSpec } from './spec.ts'
 import type { AssetManifest } from '../runtime/assets.ts'
+
+/**
+ * Turn the two concurrent jobs into one preparation state.
+ *
+ * The page has a single progress line, so the download owns it whenever bytes are moving; the build
+ * only takes over once nothing is left to download. Publishing the build first would mark the model
+ * step complete before the model had been fetched, which reads as "loaded" while the download has
+ * not started.
+ * @param download - the transfer in flight, if any.
+ * @param buildStartedAt - when the build began, for the spinner.
+ * @returns the state to publish.
+ */
+export function progressState(
+  download: { readonly resource: string; readonly completedBytes: number; readonly totalBytes?: number | undefined } | undefined,
+  buildStartedAt: number,
+): SpeechPreparationState {
+  if (download !== undefined) {
+    return {
+      phase: 'downloading',
+      resource: download.resource,
+      completedBytes: download.completedBytes,
+      ...download.totalBytes === undefined ? {} : { totalBytes: download.totalBytes },
+      step: 'model',
+    }
+  }
+  return { phase: 'loading', startedAt: buildStartedAt, step: 'load' }
+}
 
 /** Longest recording a GPU provider accepts when the tier sets no ceiling. */
 const LONGEST_RECORDING_SECONDS = 300
@@ -53,6 +80,10 @@ export class GpuProvider implements SpeechPreparation {
   private readonly listeners = new Set<() => void>()
   private binary: string | undefined
   private files: GpuFilePaths | undefined
+  /** Download in flight, so the page can show bytes while the build runs beside it. */
+  private download: { resource: string; completedBytes: number; totalBytes?: number } | undefined
+  /** When the current build phase started, for the spinning indicator. */
+  private buildStartedAt = Date.now()
   private running: { abort: AbortController; task: Promise<void> } | undefined
 
   constructor(
@@ -149,35 +180,51 @@ export class GpuProvider implements SpeechPreparation {
     if (!verdict.ok) {
       this.ctx.logger.warn(`speech-multi gpu ${this.spec.id} rejected a transcript: ${verdict.detail}`)
     }
-    return { text: result.text, audioSeconds: wave.seconds, inferenceSeconds: result.inferenceSeconds }
+    // The same short-utterance rule the CPU providers apply: a fragment of a few characters reads
+    // better without the sentence mark the model appended.
+    return { text: trimShortTrailingMarks(result.text), audioSeconds: wave.seconds, inferenceSeconds: result.inferenceSeconds }
   }
 
   /**
    * Run the whole preparation task.
    * @param signal - cancellation.
    */
+  /**
+   * Build the runtime and fetch the model, both at once.
+   *
+   * The two jobs touch different files and neither needs the other, so running them in sequence
+   * would add the download to the end of a build that already takes minutes. Whatever has byte
+   * progress is what the page shows; when only the build is left it reports a spinning step instead
+   * of a download sitting at zero.
+   * @param signal - cancellation.
+   */
   private async install(signal: AbortSignal): Promise<void> {
     try {
       this.publish({ phase: 'loading', startedAt: Date.now(), step: 'check' })
-      const binary = await ensureLlamaBinary({
+      const build = ensureLlamaBinary({
         config: this.config,
         manifest: this.manifest,
         backend: this.device.backend,
         signal,
         onStep: (step) => {
-          this.publish({
-            phase: 'downloading',
-            resource: step === 'download' ? LLAMA_SOURCE_ARCHIVE : 'llama.cpp',
-            completedBytes: 0,
-            step: step === 'download' ? 'model' : 'load',
-          })
+          if (step === 'download') this.download = { resource: LLAMA_SOURCE_ARCHIVE, completedBytes: 0 }
+          this.report()
         },
       })
-      this.publish({ phase: 'downloading', resource: this.spec.archive, completedBytes: 0, step: 'model' })
-      const files = await resolveGpuFiles({ spec: this.spec, config: this.config, manifest: this.manifest, signal })
-      this.publish({ phase: 'loading', startedAt: Date.now(), step: 'load' })
+      const files = resolveGpuFiles({
+        spec: this.spec,
+        config: this.config,
+        manifest: this.manifest,
+        signal,
+        onProgress: (progress) => {
+          this.download = { resource: this.spec.archive, completedBytes: progress.completedBytes, ...progress.totalBytes === undefined ? {} : { totalBytes: progress.totalBytes } }
+          this.report()
+        },
+      })
+      const [binary, paths] = await Promise.all([build, files])
       this.binary = binary
-      this.files = files
+      this.files = paths
+      this.download = undefined
       this.publish({ phase: 'ready' })
       this.ctx.logger.info(`speech-multi gpu ${this.spec.id} ready on ${this.device.backend} (${this.device.name})`)
     } catch (error) {
@@ -188,6 +235,11 @@ export class GpuProvider implements SpeechPreparation {
       this.publish({ phase: 'failed', message: String(error) })
       this.ctx.logger.warn(`speech-multi gpu ${this.spec.id} preparation failed: ${String(error)}`)
     }
+  }
+
+  /** Report whichever job has something to say right now. */
+  private report(): void {
+    this.publish(progressState(this.download, this.buildStartedAt))
   }
 
   /**

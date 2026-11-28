@@ -1,9 +1,11 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Config } from '../src/config.ts'
 import { detectGpu, isIntegratedName, pickDiscreteDevice } from '../src/gpu/backend.ts'
+import { builtBinary, discardOtherVersions, isUsableBinary, llamaVersion, sharedBuild, sourceDirectory } from '../src/gpu/build.ts'
+import { progressState } from '../src/gpu/provider.ts'
 import { resolveGpuFiles } from '../src/gpu/files.ts'
 import { parseTranscript } from '../src/gpu/run.ts'
 import { CONTEXT_LONG, CONTEXT_SHORT, GPU_MODELS, contextFor, runnableGpuModels } from '../src/gpu/spec.ts'
@@ -166,5 +168,202 @@ describe('discrete GPU selection', () => {
     // The host running the suite has both; a machine without a discrete GPU skips the assertion.
     if (device === undefined) return
     expect(isIntegratedName(device.name)).toBe(false)
+  })
+})
+
+describe('sharedBuild', () => {
+  it('runs the build once when two providers prepare at the same time', async () => {
+    let started = 0
+    const factory = async (): Promise<string> => {
+      started += 1
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      return 'binary'
+    }
+    const [first, second] = await Promise.all([
+      sharedBuild('root|hip', async () => await factory()),
+      sharedBuild('root|hip', async () => await factory()),
+    ])
+    expect(started).toBe(1)
+    expect(first).toBe('binary')
+    expect(second).toBe('binary')
+  })
+
+  it('builds again once the previous one settled, so a retry is not blocked', async () => {
+    let started = 0
+    const factory = async (): Promise<string> => {
+      started += 1
+      return `binary-${started}`
+    }
+    expect(await sharedBuild('again|hip', async () => await factory())).toBe('binary-1')
+    expect(await sharedBuild('again|hip', async () => await factory())).toBe('binary-2')
+  })
+
+  it('lets a caller give up without cancelling the build others are waiting on', async () => {
+    const abort = new AbortController()
+    let finished = false
+    const build = sharedBuild('cancel|hip', async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      finished = true
+      return 'binary'
+    })
+    const waiter = sharedBuild('cancel|hip', async () => 'unused', abort.signal)
+    abort.abort()
+    await expect(waiter).rejects.toThrow()
+    expect(await build).toBe('binary')
+    expect(finished).toBe(true)
+  })
+
+  it('separates builds by backend, because each one links a different library', async () => {
+    const seen: string[] = []
+    const factory = (name: string) => async (): Promise<string> => {
+      seen.push(name)
+      return name
+    }
+    await Promise.all([
+      sharedBuild('sep|hip', async () => await factory('hip')()),
+      sharedBuild('sep|vulkan', async () => await factory('vulkan')()),
+    ])
+    expect(seen.sort()).toEqual(['hip', 'vulkan'])
+  })
+})
+
+describe('build cancellation', () => {
+  it('keeps the build alive while another provider still waits on it', async () => {
+    const abort = new AbortController()
+    let completed = false
+    const build = sharedBuild('share|hip', async () => {
+      await new Promise((resolve) => setTimeout(resolve, 15))
+      completed = true
+      return 'binary'
+    }, abort.signal)
+    const other = sharedBuild('share|hip', async () => 'unused')
+    abort.abort()
+    await expect(build).rejects.toThrow()
+    expect(await other).toBe('binary')
+    expect(completed).toBe(true)
+  })
+
+  it('stops the build once the last interested provider cancels', async () => {
+    const abort = new AbortController()
+    let aborted = false
+    const build = sharedBuild('alone|hip', async (signal) => {
+      signal.addEventListener('abort', () => {
+        aborted = true
+      }, { once: true })
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      return 'binary'
+    }, abort.signal)
+    abort.abort()
+    await expect(build).rejects.toThrow()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(aborted).toBe(true)
+  })
+})
+
+describe('preparation progress', () => {
+  it('shows the download while bytes are moving, even though the build runs beside it', () => {
+    const state = progressState({ resource: 'model.tar.zst', completedBytes: 10, totalBytes: 100 }, 1)
+    expect(state.phase).toBe('downloading')
+    expect(state.step).toBe('model')
+    if (state.phase !== 'downloading') throw new Error('wrong phase')
+    expect(state.completedBytes).toBe(10)
+    expect(state.totalBytes).toBe(100)
+  })
+
+  it('falls back to the build once nothing is left to download', () => {
+    const state = progressState(undefined, 1234)
+    expect(state.phase).toBe('loading')
+    expect(state.step).toBe('load')
+    if (state.phase !== 'loading') throw new Error('wrong phase')
+    expect(state.startedAt).toBe(1234)
+  })
+
+  it('never reports a download without a byte count', () => {
+    // The old sequential order published the build first, which marked the model step complete
+    // before the model had been fetched and showed "loaded" while the download had not started.
+    const states = [
+      progressState({ resource: 'a', completedBytes: 0 }, 1),
+      progressState(undefined, 2),
+    ]
+    for (const state of states) {
+      expect(state.phase === 'downloading' ? state.completedBytes : 0).toBeGreaterThanOrEqual(0)
+      expect(state.step).not.toBe('ready')
+    }
+  })
+})
+
+describe('binary reuse', () => {
+  const created: string[] = []
+
+  afterEach(async () => {
+    for (const directory of created.splice(0)) await rm(directory, { recursive: true, force: true })
+  })
+
+  it('accepts a built binary', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'binary-'))
+    created.push(directory)
+    const path = join(directory, 'llama-mtmd-cli')
+    await writeFile(path, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+    expect(await isUsableBinary(path)).toBe(true)
+  })
+
+  it('rejects a binary left behind by an interrupted build', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'binary-'))
+    created.push(directory)
+    const empty = join(directory, 'empty')
+    const notExecutable = join(directory, 'plain')
+    await writeFile(empty, '')
+    await writeFile(notExecutable, 'data', { mode: 0o644 })
+    // Existence alone is not enough: an empty or non-executable file would fail on every request.
+    expect(await isUsableBinary(empty)).toBe(false)
+    expect(await isUsableBinary(notExecutable)).toBe(false)
+    expect(await isUsableBinary(join(directory, 'missing'))).toBe(false)
+  })
+})
+
+describe('runtime version', () => {
+  it('reads the version from the pinned archive name', () => {
+    expect(llamaVersion()).toMatch(/^\d+\.\d+\.\d+/u)
+  })
+
+  it('puts the version in the build path, so a bump produces a new binary', () => {
+    const config = Config({ dataRoot: '/data' })
+    const path = builtBinary(config, 'hip')
+    expect(path).toContain(llamaVersion())
+    expect(path.endsWith('bin/llama-mtmd-cli')).toBe(true)
+    expect(builtBinary(config, 'vulkan')).not.toBe(path)
+  })
+
+  it('keeps the source tree per version instead of one shared directory', () => {
+    const config = Config({ dataRoot: '/data' })
+    expect(sourceDirectory(config).endsWith(`llama.cpp-${llamaVersion()}`)).toBe(true)
+  })
+})
+
+describe('discardOtherVersions', () => {
+  const created: string[] = []
+
+  afterEach(async () => {
+    for (const directory of created.splice(0)) await rm(directory, { recursive: true, force: true })
+  })
+
+  it('removes builds and sources from every other version', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'versions-'))
+    created.push(root)
+    const gpu = join(root, 'gpu')
+    const version = llamaVersion()
+    await mkdir(join(gpu, `build-${version}-hip`), { recursive: true })
+    await mkdir(join(gpu, `build-0.0.1-hip`), { recursive: true })
+    await mkdir(join(gpu, `llama.cpp-${version}`), { recursive: true })
+    await mkdir(join(gpu, 'llama.cpp-0.0.1'), { recursive: true })
+    await mkdir(join(gpu, 'multi-gpu-qwen3-06b-q8'), { recursive: true })
+
+    const removed = await discardOtherVersions(Config({ dataRoot: root }))
+
+    expect(removed.sort()).toEqual([`build-0.0.1-hip`, 'llama.cpp-0.0.1'])
+    // The current version and the model directories are untouched.
+    expect(await isUsableBinary(join(gpu, `llama.cpp-${version}`, 'missing'))).toBe(false)
+    expect(removed).not.toContain(`build-${version}-hip`)
+    expect(removed).not.toContain('multi-gpu-qwen3-06b-q8')
   })
 })

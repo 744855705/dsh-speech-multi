@@ -100,11 +100,17 @@ function findLoop(text: string): string | undefined {
 /** Content characters below which a transcript is a fragment, not a sentence. */
 export const SHORT_UTTERANCE_CHARS = 5
 
-/** Marks that may sit at the end of a fragment. */
-const TRAILING_MARKS = /[，。？！、；：]+$/u
+/**
+ * Marks that may sit at the end of a fragment.
+ *
+ * Unicode punctuation rather than a hand-written list: a short utterance should lose its ending
+ * whichever punctuation the model used, and the list of marks that people actually end a sentence
+ * with keeps growing (`…`, `——`, the ASCII forms, the CJK forms).
+ */
+const TRAILING_MARKS = /\p{P}+$/u
 
 /** Every mark and space, used to count only the words a person actually said. */
-const NON_CONTENT = /[，。？！、；：\s]/gu
+const NON_CONTENT = /[\p{P}\s]/gu
 
 /**
  * Count the characters a mark could belong to.
